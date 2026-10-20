@@ -1,9 +1,9 @@
 ---
-title: "Telcobase 주간 업무 점검"
+title: "주간 업무 점검"
 date: "2026-10-20"
 today_routine:
   version: 1
-  id: "telcobase-weekly-2026-10-20"
+  id: "weekly-review-2026-10-20"
   tasks:
     - id: "review-issues"
       title: "담당 이슈 점검"
@@ -25,7 +25,7 @@ today_routine:
           title: "주간보고에 반영"
 ---
 
-# Telcobase 주간 업무 점검
+# 주간 업무 점검
 
 이번 주 진행 중인 이슈와 완료 내역을 확인합니다.
 

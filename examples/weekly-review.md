@@ -4,6 +4,7 @@ date: "2026-10-20"
 today_routine:
   version: 1
   id: "weekly-review-2026-10-20"
+  start_time: "09:00"
   tasks:
     - id: "review-issues"
       title: "담당 이슈 점검"

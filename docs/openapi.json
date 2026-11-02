@@ -1,0 +1,163 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "hyunho todo inbox",
+    "version": "1.0.0",
+    "summary": "A write-mostly inbox where AI agents drop todo items for hyunho; hyunho's own iPhone app fetches them and then clears them.",
+    "description": "## What this is\nA small queue of todo items for one person (hyunho, timezone Asia/Seoul, KST = UTC+09:00). AI agents and bots **add** todos with `POST /api/inbox`. hyunho's own app **fetches** them with `GET /api/inbox`, saves them locally, then **acknowledges** them with `DELETE /api/inbox` and the exact ids it saved.\n\n## When an AI agent should use it\n- Use it when hyunho asked you to remind them, follow up, or put something on their todo list, or when your task produced a concrete action item for hyunho.\n- Add one item per actionable task, with a short imperative `title` (e.g. \"Pay the electricity bill\"). Put details, links and context in `note`.\n- Always set `source` to your own name (the AI/bot adding it, e.g. `\"deals-bot\"`, `\"calendar-assistant\"`) so hyunho knows where it came from.\n- Agents normally only POST. Do **not** DELETE items you did not create, and never use `{\"all\": true}`; clearing is the app's job.\n- Don't add duplicates: if you're unsure whether you already added an item, GET first and compare titles.\n\n## Auth\nEvery data request needs `Authorization: Bearer <TOKEN>`. The token is given to you by hyunho out of band. Never print it, log it, commit it, or put it in URLs. These docs (`/api/inbox/openapi.json`, `/api/inbox/docs.md`, `/api/inbox/llms.txt`) are public and need no token.\n\n## Consistency (important)\nStorage is Cloudflare KV, which is **eventually consistent across regions (up to ~60 s)**. A just-added item may not appear in GET right away, and a just-deleted item may briefly reappear. Consequences:\n- Clients must **de-duplicate by `id`**.\n- DELETE is idempotent; re-sending an already-deleted id is harmless.\n- Don't poll in a tight loop to confirm a write. The 201 response from POST is the confirmation.\n\n## Recommended app flow (fetch → save → ack)\n1. `GET /api/inbox?limit=100`.\n2. Save every returned item locally, keyed by `id` (skip ids you already have).\n3. `DELETE /api/inbox` with `{\"ids\": [...]}` containing exactly the ids you saved.\n4. If `has_more` is true, repeat. If DELETE fails, retry it on the next poll.\nNever clear with `{\"all\": true}` in normal operation: items added between your GET and DELETE would be lost.\n\n## Limits\nRequest body max 16 KB. `title` ≤ 500 chars, `note` ≤ 5000, `source` ≤ 100, up to 20 `tags` of ≤ 50 chars each. GET `limit` 1-500 (default 100). DELETE up to 1000 ids per request.\n\n## CORS\n`Access-Control-Allow-Origin: *`; methods GET, POST, DELETE, OPTIONS; headers Authorization, Content-Type. No cookies are used.",
+    "contact": { "name": "hyunho" }
+  },
+  "servers": [{ "url": "https://hyunho-feeds.pages.dev", "description": "Production (Cloudflare Pages)" }],
+  "security": [{ "bearerAuth": [] }],
+  "tags": [{ "name": "inbox", "description": "Todo inbox operations" }],
+  "paths": {
+    "/api/inbox": {
+      "get": {
+        "tags": ["inbox"],
+        "operationId": "listTodos",
+        "summary": "List pending todos (oldest first)",
+        "description": "Returns pending todos, oldest first (ids are UUIDv7, so they sort by creation time). Mostly used by hyunho's app. An agent may call it to avoid adding duplicates. Results may lag recent writes by up to ~60 s (KV eventual consistency).",
+        "parameters": [{
+          "name": "limit", "in": "query", "required": false,
+          "description": "Max items to return (1-500). If more are pending, `has_more` is true.",
+          "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 }
+        }],
+        "responses": {
+          "200": {
+            "description": "Pending todos.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TodoList" },
+              "example": { "items": [{ "id": "01a10e48-2c0f-756e-9832-12695d45a818", "created_at": "2026-10-06T07:56:13+09:00", "title": "전기요금 납부", "note": "고지서 링크: https://example.com/bill", "due": "2026-10-07", "priority": "high", "source": "deals-bot", "tags": ["생활", "결제"] }], "count": 1, "has_more": false } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      },
+      "post": {
+        "tags": ["inbox"],
+        "operationId": "addTodo",
+        "summary": "Add a todo",
+        "description": "Adds one todo for hyunho. The server assigns `id` and `created_at`. Only `title` is required. Unknown fields are ignored. Fields left out or empty are omitted from the stored item.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewTodo" },
+            "examples": {
+              "minimal": { "value": { "title": "Reply to Minji about Saturday", "source": "mail-assistant" } },
+              "full": { "value": { "title": "전기요금 납부", "note": "고지서 링크: https://example.com/bill", "due": "2026-10-07T18:00", "priority": "high", "source": "deals-bot", "tags": ["생활", "결제"] } }
+            } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created. The returned item is the confirmation; there is no need to re-read it.",
+            "content": { "application/json": { "schema": { "type": "object", "required": ["item"], "properties": { "item": { "$ref": "#/components/schemas/Todo" } } } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      },
+      "delete": {
+        "tags": ["inbox"],
+        "operationId": "clearTodos",
+        "summary": "Acknowledge/clear todos by id (or all)",
+        "description": "Deletes the given ids. This is how hyunho's app acknowledges items it has saved. It is idempotent: ids that don't exist are silently ignored. AI agents should not call this, except to remove an item they themselves just added by mistake. `{\"all\": true}` deletes everything pending. It is not recommended, because items added after your last GET would be lost.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "oneOf": [ { "$ref": "#/components/schemas/DeleteByIds" }, { "$ref": "#/components/schemas/DeleteAll" } ] },
+            "examples": { "byIds": { "value": { "ids": ["01a10e48-2c0f-756e-9832-12695d45a818"] } }, "all": { "value": { "all": true } } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Deleted. Returned for both the by-ids and the all form.",
+            "content": { "application/json": { "schema": { "oneOf": [
+              { "type": "object", "required": ["deleted", "ids"], "properties": { "deleted": { "type": "integer", "description": "Number of distinct ids processed (including ids that didn't exist)." }, "ids": { "type": "array", "items": { "type": "string", "format": "uuid" } } } },
+              { "type": "object", "required": ["deleted", "all"], "properties": { "deleted": { "type": "integer" }, "all": { "const": true } } }
+            ] } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      },
+      "options": {
+        "tags": ["inbox"],
+        "operationId": "corsPreflight",
+        "summary": "CORS preflight",
+        "description": "Returns 204 with CORS headers. No auth required.",
+        "security": [],
+        "responses": { "204": { "description": "Preflight OK.", "headers": {
+          "Access-Control-Allow-Origin": { "schema": { "type": "string", "const": "*" } },
+          "Access-Control-Allow-Methods": { "schema": { "type": "string", "const": "GET, POST, DELETE, OPTIONS" } },
+          "Access-Control-Allow-Headers": { "schema": { "type": "string", "const": "Authorization, Content-Type" } } } } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "description": "Static API token given to you by hyunho. Send it as `Authorization: Bearer <TOKEN>`. Keep it secret." }
+    },
+    "schemas": {
+      "Priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"], "description": "How important or urgent the task is. Case-insensitive on input, stored lowercase. Omit it if unknown; the app treats a missing value as normal. Use `urgent` sparingly (same day, real consequences)." },
+      "Due": {
+        "type": "string",
+        "description": "When the task is due, in KST (Asia/Seoul, +09:00). Either a date `YYYY-MM-DD` (all-day, stored as given) or a datetime `YYYY-MM-DDTHH:MM[:SS]` with an optional offset. A datetime without an offset is interpreted as KST and stored with `+09:00` appended. Other offsets (e.g. `Z`) are accepted and stored as given. Natural language like \"tomorrow\" is rejected, so resolve it to a date yourself.",
+        "examples": ["2026-10-07", "2026-10-07T18:30", "2026-10-07T18:30:00+09:00"]
+      },
+      "NewTodo": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 500, "description": "Short, imperative task title shown in the list, e.g. \"Book dentist appointment\". Korean or English is fine." },
+          "note": { "type": "string", "maxLength": 5000, "description": "Optional details: context, links, steps. Plain text." },
+          "due": { "$ref": "#/components/schemas/Due" },
+          "priority": { "$ref": "#/components/schemas/Priority" },
+          "source": { "type": "string", "maxLength": 100, "description": "Name of the AI/bot adding the item (e.g. \"deals-bot\", \"research-agent\"). Strongly recommended." },
+          "tags": {
+            "description": "Optional labels. An array of strings, or one comma-separated string. Trimmed, de-duplicated, empty entries dropped. Max 20 tags, each up to 50 chars.",
+            "oneOf": [ { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 50 } }, { "type": "string" } ]
+          }
+        }
+      },
+      "Todo": {
+        "type": "object",
+        "description": "A stored todo. Optional fields are omitted when not set.",
+        "required": ["id", "created_at", "title"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "Server-assigned UUIDv7 (time-ordered). Use it to de-duplicate and to DELETE." },
+          "created_at": { "type": "string", "format": "date-time", "description": "Server time the item was added, KST with second precision, e.g. 2026-10-06T07:56:13+09:00." },
+          "title": { "type": "string" },
+          "note": { "type": "string" },
+          "due": { "$ref": "#/components/schemas/Due" },
+          "priority": { "$ref": "#/components/schemas/Priority" },
+          "source": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "TodoList": {
+        "type": "object",
+        "required": ["items", "count", "has_more"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/Todo" }, "description": "Oldest first." },
+          "count": { "type": "integer", "description": "Number of items in this response." },
+          "has_more": { "type": "boolean", "description": "True if more pending items exist beyond `limit`." }
+        }
+      },
+      "DeleteByIds": { "type": "object", "required": ["ids"], "properties": { "ids": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "type": "string", "format": "uuid" }, "description": "Exactly the ids you fetched and saved." } } },
+      "DeleteAll": { "type": "object", "required": ["all"], "properties": { "all": { "const": true, "description": "Delete everything pending. Not recommended." } } },
+      "Error": {
+        "type": "object", "required": ["error"],
+        "properties": { "error": { "type": "object", "required": ["code", "message"], "properties": {
+          "code": { "type": "string", "enum": ["invalid", "bad_json", "too_large", "unauthorized", "method_not_allowed", "not_configured", "internal"] },
+          "message": { "type": "string", "description": "Human-readable reason, e.g. \"title is required\"." } } } },
+        "example": { "error": { "code": "invalid", "message": "title is required" } }
+      }
+    },
+    "responses": {
+      "BadRequest": { "description": "Validation failed (`invalid`) or the body is not JSON (`bad_json`). Fix the request; don't retry it unchanged.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unauthorized": { "description": "Missing or wrong bearer token.", "headers": { "WWW-Authenticate": { "schema": { "type": "string" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "TooLarge": { "description": "Body over 16 KB.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotConfigured": { "description": "Server storage/token not configured. This is temporary, so retry later.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    }
+  }
+}

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>SNS 구독 타임라인</title>
+<style>
+:root{--bg:#fff;--fg:#0f1419;--mut:#536471;--line:#eff3f4;--chip:#eff3f4;--acc:#1d9bf0;--card:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--fg:#e7e9ea;--mut:#71767b;--line:#2f3336;--chip:#16181c;--card:#000}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+.wrap{max-width:600px;margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line);min-height:100vh}
+header{position:sticky;top:0;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);z-index:2;padding:10px 16px 0}
+h1{font-size:20px;margin:0 0 2px}.sub{color:var(--mut);font-size:13px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:10px 0;scrollbar-width:none}
+.chip{flex:none;border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:999px;padding:6px 12px;font-size:14px;cursor:pointer}
+.chip.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.post{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--card)}
+.av{flex:none;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:18px}
+.main{min-width:0;flex:1}.hd{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+.nm{font-weight:700}.hn,.tm{color:var(--mut);font-size:14px}
+.tx{white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;margin:4px 0}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.media{display:grid;gap:4px;margin:8px 0;border-radius:16px;overflow:hidden;border:1px solid var(--line)}
+.media.n2,.media.n3,.media.n4{grid-template-columns:1fr 1fr}.media img{width:100%;max-height:520px;object-fit:cover;display:block}
+.ft{display:flex;gap:16px;font-size:13px;color:var(--mut)}.badge{font-size:12px;color:var(--mut)}
+.avl{flex:none;border-radius:50%;transition:opacity .15s}.avl:hover,.avl:active{opacity:.8}
+.prof{display:inline-flex;gap:6px;align-items:baseline;color:var(--fg)}.prof:hover .nm,.prof:active .nm{text-decoration:underline}.prof:hover{text-decoration:none}
+.ph{padding:16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.back{border:0;background:none;color:var(--acc);font-size:15px;padding:0 0 10px;cursor:pointer}
+.av.big{width:84px;height:84px;font-size:36px;margin-bottom:8px}.pn{font-size:22px;font-weight:800}.ps{font-size:14px;margin:4px 0}.real{font-size:13px}
+.empty{padding:40px;text-align:center;color:var(--mut)}
+</style></head><body><div class="wrap">
+<header><h1>SNS 구독 타임라인</h1><div class="sub" id="sub">불러오는 중…</div><div class="chips" id="chips"></div></header>
+<main id="list"></main></div>
+<script>
+const COLORS=["#1d9bf0","#f91880","#00ba7c","#7856ff","#ff7a00","#e0245e","#17bf63"];
+const NAMES={ValleyAI_X:"Valley AI",LearnerBR:"이보라",simonw:"Simon Willison",hubermanlab:"Andrew Huberman",MerriamWebster:"Merriam-Webster","bodycontrol_no.1":"바디컨트롤"};
+let posts=[],filter="all";
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+function kst(d){const k=new Date(d.getTime()+9*3600e3);const p=n=>String(n).padStart(2,"0");return `${k.getUTCFullYear()}-${p(k.getUTCMonth()+1)}-${p(k.getUTCDate())} ${p(k.getUTCHours())}:${p(k.getUTCMinutes())} KST`}
+function paraText(p){const c=p.cloneNode(true);c.querySelectorAll("br").forEach(b=>b.replaceWith("\n"));return c.textContent}
+function parse(item){
+  const title=item.querySelector("title")?.textContent||"";
+  const raw=item.querySelector("description")?.textContent||"";
+  const doc=new DOMParser().parseFromString(raw,"text/html");
+  let pub=new Date(item.querySelector("pubDate")?.textContent);
+  const tm=title.match(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) KST/);
+  let when=tm?new Date(`${tm[1]}T${tm[2]}:00+09:00`):pub;
+  const ig=raw.match(/https:\/\/www\.instagram\.com\/(?:p|reel)\/[\w-]+\/?/);
+  const xs=[...raw.matchAll(/https:\/\/(?:x|twitter)\.com\/(\w+)\/status\/\d+/g)].map(m=>m);
+  let acct,platform,link,text="",media=[];
+  if(ig&&/바디컨트롤/.test(title)){
+    acct="bodycontrol_no.1";platform="Instagram";link=ig[0];
+    const g=raw.match(/게시일:<\/strong>\s*(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})/);if(g)when=new Date(`${g[1]}T${g[2]}:00+09:00`);
+    const h2=[...doc.querySelectorAll("h2")].find(h=>/원문/.test(h.textContent));
+    const parts=[];let n=h2?h2.nextElementSibling:null;
+    while(n&&n.tagName!=="H2"){if(!/봇 열기/.test(n.textContent))parts.push(paraText(n));n=n.nextElementSibling}
+    text=parts.join("\n\n").split("\n").map(l=>l.replace(/^>\s?/,"")).join("\n").trim();
+  }else{
+    platform="X";const last=xs[xs.length-1];link=xs[0]?xs[0][0]:null;
+    acct=xs[0]?xs[0][1]:(title.match(/@(\w+)/)||[])[1]||"X";
+    const parts=[];
+    doc.querySelectorAll("body > *").forEach(p=>{
+      const t=paraText(p).trim();
+      if(/봇 열기/.test(t))return;
+      if(/^Media:/.test(t)){media.push(...(t.match(/https?:\/\/\S+/g)||[]));return}
+      if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} KST$/.test(t))return;
+      if(link&&t===link)return;
+      parts.push(t)});
+    text=parts.join("\n\n").split("\n").filter(l=>!/^\s*\d{4}-\d{2}-\d{2} \d{2}:\d{2} KST\s*$/.test(l)&&!(link&&l.trim()===link)).join("\n").replace(/\n{3,}/g,"\n\n").trim();
+  }
+  return {acct,platform,link,text,media,when};
+}
+function linkify(node,text){
+  const re=/(https?:\/\/[^\s<>"]+)/g;let i=0,m;
+  while((m=re.exec(text))){node.append(text.slice(i,m.index));const a=el("a",null,m[1]);a.href=m[1];a.target="_blank";a.rel="noopener noreferrer";node.append(a);i=m.index+m[1].length}
+  node.append(text.slice(i));
+}
+const accts=()=>{const s=[];posts.forEach(p=>{if(!s.includes(p.acct))s.push(p.acct)});return s};
+const color=a=>COLORS[[...a].reduce((h,c)=>h*31+c.charCodeAt(0)>>>0,7)%COLORS.length];
+function render(){
+  const chips=document.getElementById("chips");chips.innerHTML="";
+  [["all","전체"],...accts().map(a=>[a,NAMES[a]||"@"+a])].forEach(([k,l])=>{const b=el("button","chip"+(filter===k?" on":""),l);b.onclick=()=>{location.hash=k==="all"?"":"@"+k};chips.append(b)});
+  const list=document.getElementById("list");list.innerHTML="";
+  if(filter!=="all"){const ps=posts.filter(p=>p.acct===filter),f=ps[0]||{acct:filter,platform:"X"};
+    const ph=el("section","ph");const bk=el("button","back","← 타임라인");bk.onclick=()=>{history.length>1&&prevAll?history.back():location.hash=""};
+    const big=el("div","av big",(NAMES[filter]||filter)[0].toUpperCase());big.style.background=color(filter);
+    const real=f.platform==="Instagram"?"https://www.instagram.com/"+filter+"/":"https://x.com/"+filter;
+    const rl=el("a","real",(f.platform==="Instagram"?"Instagram":"X")+"에서 프로필 보기 ↗");rl.href=real;rl.target="_blank";rl.rel="noopener noreferrer";
+    ph.append(bk,big,el("div","pn",NAMES[filter]||filter),el("div","hn",(f.platform==="Instagram"?"Instagram @":"X @")+filter),
+      el("div","ps",`게시물 ${ps.length}개`+(ps[0]?` · 최근 ${kst(ps[0].when)}`:"")),rl);list.append(ph)}
+  const shown=posts.filter(p=>filter==="all"||p.acct===filter);
+  if(!shown.length)list.append(el("div","empty","표시할 글이 없어요."));
+  shown.forEach(p=>{
+    const prof=p.platform==="Instagram"?"https://www.instagram.com/"+p.acct+"/":"https://x.com/"+p.acct;
+    const mk=c=>{const a=el("a",c);a.href="#@"+p.acct;a.title="프로필 보기";return a};
+    const art=el("article","post");const avl=mk("avl");const av=el("div","av",(NAMES[p.acct]||p.acct)[0].toUpperCase());av.style.background=color(p.acct);
+    const m=el("div","main");const hd=el("div","hd");
+    const pl=mk("prof");pl.append(el("span","nm",NAMES[p.acct]||p.acct),el("span","hn",(p.platform==="Instagram"?"Instagram @":"@")+p.acct));
+    hd.append(pl,el("span","tm","· "+kst(p.when)));avl.append(av);
+    const tx=el("div","tx");linkify(tx,p.text);m.append(hd,tx);
+    if(p.media.length){const md=el("div","media n"+Math.min(p.media.length,4));p.media.slice(0,4).forEach(u=>{const a=el("a");a.href=u;a.target="_blank";a.rel="noopener noreferrer";const im=el("img");im.loading="lazy";im.src=u;im.alt="첨부 이미지";im.referrerPolicy="no-referrer";a.append(im);md.append(a)});m.append(md)}
+    const ft=el("div","ft");if(p.link){const a=el("a",null,p.platform==="Instagram"?"Instagram에서 보기 ↗":"X에서 보기 ↗");a.href=p.link;a.target="_blank";a.rel="noopener noreferrer";ft.append(a)}
+    m.append(ft);art.append(avl,m);list.append(art)});
+}
+async function load(){
+  try{const r=await fetch("sns.xml",{cache:"no-cache"});const x=new DOMParser().parseFromString(await r.text(),"application/xml");
+    posts=[...x.querySelectorAll("item")].map(parse).sort((a,b)=>b.when-a.when);
+    document.getElementById("sub").textContent=`글 ${posts.length}개 · 최신순 · ${kst(new Date())} 기준`;render();
+  }catch(e){document.getElementById("sub").textContent="피드를 불러오지 못했어요: "+e.message}
+}
+let prevAll=false;
+function fromHash(){const h=decodeURIComponent(location.hash.replace(/^#@?/,""));prevAll=filter==="all"&&!!h;filter=h||"all";if(posts.length)render();window.scrollTo(0,0)}
+window.addEventListener("hashchange",fromHash);fromHash();prevAll=false;
+load();setInterval(load,5*60e3);document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
+</script></body></html>

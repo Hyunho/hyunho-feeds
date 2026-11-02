@@ -1,0 +1,30 @@
+# Secrets / local credentials (never commit)
+secret.txt
+inbox_token.txt
+account_id.txt
+project.txt
+done_token.txt
+d1_db_id.txt
+inbox_kv_id.txt
+*.token
+*.pem
+
+# Backups
+*.bak-*
+*.bak
+
+# Generated / deploy output
+public/
+.publish.lock
+items.json
+
+# Tooling
+node_modules/
+.wrangler/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local env
+.env
+.env.*

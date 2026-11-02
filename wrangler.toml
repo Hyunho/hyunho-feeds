@@ -1,0 +1,14 @@
+# Cloudflare Pages project config for hyunho-feeds.
+# Static output is built into public/ by publish.py; functions/ is adjacent.
+name = "hyunho-feeds"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hyunho-feeds-db"
+database_id = "4248dc15-eb81-43f3-a467-3c2810c45462"
+
+[[kv_namespaces]]
+binding = "INBOX"
+id = "8f801b9e965e414fb72240fdd82c468e"

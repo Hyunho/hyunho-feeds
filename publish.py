@@ -1579,7 +1579,16 @@ def today_page(routines):
     return TODAY_HTML.replace("__DATA__", data)
 
 
+
+def sync_secret_functions():
+    """Refresh live functions/<secret>/ from tracked functions/_secret_/ (no-op if missing)."""
+    script = os.path.join(BASE, "scripts", "sync-secret-functions.sh")
+    if not os.path.isfile(script):
+        return
+    subprocess.run(["bash", script], check=False)
+
 def build():
+    sync_secret_functions()
     sec = secret()
     chans = load_channels()
     items = by_date(load_items())[:MAX_ITEMS]
@@ -1732,6 +1741,7 @@ def wrangler(args, env, check=True):
 
 
 def deploy(sec):
+    sync_secret_functions()
     name = project()
     env = dict(os.environ, CLOUDFLARE_ACCOUNT_ID=account_id(), WRANGLER_SEND_METRICS="false")
     rc, out = wrangler(["project", "list", "--json"], env, check=False)

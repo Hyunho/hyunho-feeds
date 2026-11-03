@@ -1,0 +1,88 @@
+{
+  "channels": {
+    "valley": {
+      "name": "Valley AI",
+      "description": "valley.town 브리핑 · 공부 일정",
+      "file": "valley.xml",
+      "builtin": true,
+      "link": "https://www.valley.town/",
+      "agent_id": "31c9ced1-decf-43ca-aee1-a59e15c564a9",
+      "agent_name": "valley ai 학습"
+    },
+    "nomad-coders": {
+      "name": "노마드 코더 학습",
+      "description": "노마드 코더 강의 학습 정리",
+      "created": "2026-10-02T22:12:32+09:00",
+      "agent_id": "a93df8d3-7d51-4003-896c-b0bb383d0b73",
+      "agent_name": "노마드 코더 학습"
+    },
+    "deals": {
+      "name": "할인정보 정리",
+      "description": "매일 아침 배달·외식·공연·여행·가전 할인 요약",
+      "created": "2026-10-03T08:08:51+09:00",
+      "agent_id": "e93ed2b9-4bd2-447d-9cdc-1d3aae3fb1c0",
+      "agent_name": "할인정보/구매 봇"
+    },
+    "culture": {
+      "name": "문화생활",
+      "description": "송파 공연·전시 소식",
+      "created": "2026-10-04T08:21:23+09:00",
+      "agent_id": "cd781941-bfb4-417e-90f8-86f95ce8ac2d",
+      "agent_name": "문화생활"
+    },
+    "parenting": {
+      "name": "육아봇",
+      "description": "17개월 아이 월령별 육아 팁",
+      "created": "2026-10-06T10:29:16+09:00",
+      "agent_id": "e974de70-8823-469d-a3ca-9fb162136d39",
+      "agent_name": "육아봇"
+    },
+    "english-study": {
+      "name": "영어 공부",
+      "description": "영어 원문 영한 대역 읽기",
+      "created": "2026-10-14T20:56:13+09:00",
+      "agent_id": "2b263b22-bc54-46b0-80ff-fb44f1589caa",
+      "agent_name": "영어 공부"
+    },
+    "sns": {
+      "name": "SNS",
+      "description": "",
+      "created": "2026-10-15T08:23:37+09:00",
+      "agent_id": "994e94af-3a82-43f2-9e40-dd7af2bd6497",
+      "agent_name": "SNS 구독 봇"
+    },
+    "forge-master": {
+      "name": "Forge Master",
+      "description": "",
+      "created": "2026-10-21T17:18:38+09:00",
+      "agent_id": "063518fa-34a7-43f1-8c62-a7acc644346d",
+      "agent_name": "forge master game"
+    },
+    "schedule": {
+      "name": "일정/루틴 관리",
+      "description": "",
+      "created": "2026-10-22T22:01:30+09:00"
+    },
+    "reading": {
+      "name": "독서",
+      "description": "",
+      "created": "2026-10-23T08:01:38+09:00",
+      "agent_id": "0b622bec-1489-4d8f-abfc-ada3b5970014",
+      "agent_name": "독서"
+    },
+    "daily-routine": {
+      "name": "일상 루틴",
+      "description": "",
+      "created": "2026-10-29T06:46:36+09:00",
+      "agent_id": "b1e73f00-c05f-4eab-a638-6786d2097b1b",
+      "agent_name": "일상 루틴"
+    },
+    "claude-academy": {
+      "name": "Claude Academy",
+      "description": "Claude Academy 매일 학습",
+      "created": "2026-10-31T18:00:50+09:00",
+      "agent_id": "e693cb93-3e09-4f82-a815-fb45b210ffc0",
+      "agent_name": "claude academe 학습봇"
+    }
+  }
+}

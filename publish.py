@@ -1887,8 +1887,16 @@ def build():
                 "  Cache-Control: public, max-age=300", ""]
     hdr += ["/%s/channels.opml" % sec, "  Content-Type: text/x-opml; charset=utf-8",
             "  Cache-Control: public, max-age=300", ""]
+    # Extensionless /today and /sns are real files (or pretty paths). Without an explicit
+    # Content-Type, Pages serves them as application/octet-stream and browsers download them.
     for _p in ("today", "today.html", "sns", "sns.html"):
-        hdr += ["/%s/%s" % (sec, _p), "  Cache-Control: no-cache", ""]
+        hdr += ["/%s/%s" % (sec, _p), "  Content-Type: text/html; charset=utf-8",
+                "  Cache-Control: no-cache", ""]
+    # Also publish extensionless copies so /today and /sns resolve without relying on rewrites.
+    for _src, _dst in (("today.html", "today"), ("sns.html", "sns")):
+        src = os.path.join(d, _src)
+        if os.path.isfile(src):
+            shutil.copyfile(src, os.path.join(d, _dst))
     hdr += ["/%s/cal/*" % sec, "  Content-Type: text/calendar; charset=utf-8",
             "  Cache-Control: public, max-age=60", ""]
     hdr += ["/%s/*" % sec, "  Referrer-Policy: no-referrer", ""]

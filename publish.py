@@ -854,14 +854,12 @@ main{max-width:40rem;margin:0 auto}h1{font-size:1.5rem;margin:.2rem 0}.sub{color
 .ol-b.cal-ev>.ol-row::before{content:"";position:absolute;left:.15rem;top:.35rem;bottom:.35rem;width:.28rem;border-radius:4px;background:var(--cal,#888)}
 .ol-b.cal-ev>.ol-row .ol-dot{background:var(--cal,#888)}
 #toc-sheet-list a.cal-ev{box-shadow:inset .28rem 0 0 var(--cal,#888)}
-.card.done,.card.skip{opacity:.7;padding:.45rem .85rem;margin:0 0 .45rem;box-shadow:none}
-.card.done .card-title,.card.skip .card-title{text-decoration:line-through;color:var(--sub);font-weight:500;font-size:1rem}
+.card.done,.card.skip{opacity:.92;margin:0 0 1rem}
+.card.done .card-title,.card.skip .card-title{text-decoration:line-through;color:var(--sub);font-weight:500}
 .card.done .card-time,.card.skip .card-time{color:var(--sub)}
-.card.done .meta,.card.done .tm,.card.done .cal,.card.done ol.tl,.card.done .tot,.card.done .subtasks,
-.card.skip .meta,.card.skip .tm,.card.skip .cal,.card.skip ol.tl,.card.skip .tot,.card.skip .subtasks{display:none}
-.card.done .ch,.card.skip .ch{display:block;margin:0 0 .2rem;font-size:.72rem;opacity:.9}
-.card.done .card-title-row,.card.skip .card-title-row{margin:0}
-.card.skip{opacity:.62}
+/* Routine open/done/skip is independent of feed-task and D1 subtask checkboxes.
+   Do not hide ol.tl / .subtasks when the card state changes. */
+.card.skip{opacity:.85}
 .card.skip .card-title{color:#8b9198}
 .done-cb{flex:0 0 auto;width:1.15rem;height:1.15rem;margin:0;padding:0;border:2px solid var(--line);border-radius:4px;background:var(--card);color:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:.85rem;line-height:1;font-weight:700;-webkit-tap-highlight-color:transparent;box-sizing:border-box}
 .done-cb[data-state="done"]{background:var(--acc);border-color:var(--acc);color:#fff}

@@ -854,17 +854,20 @@ main{max-width:40rem;margin:0 auto}h1{font-size:1.5rem;margin:.2rem 0}.sub{color
 .ol-b.cal-ev>.ol-row::before{content:"";position:absolute;left:.15rem;top:.35rem;bottom:.35rem;width:.28rem;border-radius:4px;background:var(--cal,#888)}
 .ol-b.cal-ev>.ol-row .ol-dot{background:var(--cal,#888)}
 #toc-sheet-list a.cal-ev{box-shadow:inset .28rem 0 0 var(--cal,#888)}
-.card.done,.card.skip{opacity:.7;padding:.45rem .85rem;margin:0 0 .45rem;box-shadow:none}
-.card.done .card-title,.card.skip .card-title{text-decoration:line-through;color:var(--sub);font-weight:500;font-size:1rem}
+/* Fold is driven by .collapsed (manual toggle or auto on done/skip).
+   Routine done/skip does not rewrite feed-task / D1 subtask checkbox values. */
+.card.done .card-title,.card.skip .card-title{text-decoration:line-through;color:var(--sub);font-weight:500}
 .card.done .card-time,.card.skip .card-time{color:var(--sub)}
-/* Done/skip folds the detail UI (display:none). Checkbox/state for feed tasks and
-   D1 subtasks stays independent — routine state does not rewrite those values. */
-.card.done .meta,.card.done .tm,.card.done .cal,.card.done ol.tl,.card.done .tot,.card.done .subtasks,
-.card.skip .meta,.card.skip .tm,.card.skip .cal,.card.skip ol.tl,.card.skip .tot,.card.skip .subtasks{display:none}
-.card.done .ch,.card.skip .ch{display:block;margin:0 0 .2rem;font-size:.72rem;opacity:.9}
-.card.done .card-title-row,.card.skip .card-title-row{margin:0}
-.card.skip{opacity:.62}
 .card.skip .card-title{color:#8b9198}
+.card.collapsed{opacity:.7;padding:.45rem .85rem;margin:0 0 .45rem;box-shadow:none}
+.card.collapsed .card-title{font-size:1rem}
+.card.collapsed .meta,.card.collapsed .tm,.card.collapsed .cal,.card.collapsed ol.tl,.card.collapsed .tot,.card.collapsed .subtasks{display:none}
+.card.collapsed .ch{display:block;margin:0 0 .2rem;font-size:.72rem;opacity:.9}
+.card.collapsed .card-title-row{margin:0}
+.card.skip.collapsed{opacity:.62}
+.card-fold{flex:0 0 1.15rem;width:1.15rem;height:1.15rem;margin:0;padding:0;border:0;border-radius:4px;background:transparent;color:var(--sub);cursor:pointer;font-size:.65rem;line-height:1.15rem;text-align:center;-webkit-tap-highlight-color:transparent}
+.card-fold:hover{background:var(--ol-hover);color:var(--fg)}
+.card.collapsed .card-fold{transform:rotate(-90deg)}
 .done-cb{flex:0 0 auto;width:1.15rem;height:1.15rem;margin:0;padding:0;border:2px solid var(--line);border-radius:4px;background:var(--card);color:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:.85rem;line-height:1;font-weight:700;-webkit-tap-highlight-color:transparent;box-sizing:border-box}
 .done-cb[data-state="done"]{background:var(--acc);border-color:var(--acc);color:#fff}
 .done-cb[data-state="done"]::before{content:"✓"}
@@ -1015,7 +1018,7 @@ D.forEach(function(r){
 var KEY='today-routine-start';
 var VIEW_KEY='today-view-mode';
 if(!window.CSS)window.CSS={};if(typeof CSS.escape!=='function'){CSS.escape=function(s){return String(s).replace(/[^a-zA-Z0-9_-]/g,function(c){return '\\'+c;});};}
-var COL_KEY='today-outline-collapsed';
+var COL_KEY='today-outline-collapsed'; // oid -> 1 folded, 0 expanded; absent = default by routine state
 var TASK_KEY='today-routine-task-done';
 var TASKS_DONE={};
 function loadTasksDone(){try{TASKS_DONE=JSON.parse(localStorage.getItem(TASK_KEY)||'{}')||{};}catch(e){TASKS_DONE={};}}
@@ -1150,6 +1153,7 @@ function link(r,t){var tl=t.title.toLowerCase();for(var i=0;i<r.links.length;i++
 function card(r,future){
  var sv=startOf(r),own=!!userStart(r.rid),base=null;if(sv){var p=sv.split(':');base=(+p[0])*60+(+p[1]);}
  var st=itemState(r.rid),isDone=st==='done',isSkip=st==='skip';
+ var folded=isFolded(r.rid);
  var tasks=r.tasks||[];
  // Calendar stub: one synthetic task that only echoes the card title (+ time range).
  var stub=tasks.length===1 && !tasks[0].steps.length && (function(){
@@ -1157,8 +1161,8 @@ function card(r,future){
   return !tt || tt===ti || tt.indexOf(ti+' (')===0 || tt.indexOf(ti+'(')===0;
  })();
  enrichExt(r);
- var h='<div class="card'+(isDone?' done':'')+(isSkip?' skip':'')+calClass(r)+'" id="c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+calStyleAttr(r)+'><div class="ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</div>';
- h+='<div class="card-title-row">'+stateBtnHtml(r.rid,st)+'<span class="card-time">'+esc(sv||'--:--')+'</span><h2 class="card-title">'+esc(displayTitle(r))+'</h2></div>';
+ var h='<div class="card'+(isDone?' done':'')+(isSkip?' skip':'')+(folded?' collapsed':'')+calClass(r)+'" id="c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+calStyleAttr(r)+'><div class="ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</div>';
+ h+='<div class="card-title-row">'+foldBtnHtml(r.rid,folded)+stateBtnHtml(r.rid,st)+'<span class="card-time">'+esc(sv||'--:--')+'</span><h2 class="card-title">'+esc(displayTitle(r))+'</h2></div>';
  // Meta only when not "today" (page header already says today) or when tagged.
  if(r.date!==today||future||r.date<today||r.fixedRoutine){
   h+='<div class="meta">'+label(r.date)+(future?' 예정':' 루틴')+(r.date<today?'<span class="tag">이전 날짜</span>':'')+(future?'<span class="tag">예정</span>':'')+(r.fixedRoutine?'<span class="tag">고정 세부 루틴</span>':'')+'</div>';
@@ -1199,10 +1203,45 @@ function card(r,future){
 }
 function loadCollapsed(){try{return JSON.parse(localStorage.getItem(COL_KEY)||'{}')||{};}catch(e){return {};}}
 function saveCollapsed(m){try{localStorage.setItem(COL_KEY,JSON.stringify(m));}catch(e){}}
+function foldOid(rid){return 'c-'+rid;}
+function isFolded(rid){
+ var oid=foldOid(rid),m=loadCollapsed();
+ if(Object.prototype.hasOwnProperty.call(m,oid))return !!m[oid];
+ var st=itemState(rid);
+ return st==='done'||st==='skip';
+}
+function foldBtnHtml(rid,folded){
+ return '<button type="button" class="card-fold" data-rid="'+esc(rid)+'" aria-expanded="'+(folded?'false':'true')+'" aria-label="'+(folded?'세부 펼치기':'세부 접기')+'" title="세부 접기/펼치기">▼</button>';
+}
+function applyFoldDom(rid,folded){
+ var card=document.getElementById('c-'+rid);
+ if(card){
+  card.classList.toggle('collapsed',!!folded);
+  var btn=card.querySelector('.card-fold');
+  if(btn){
+   btn.setAttribute('aria-expanded',folded?'false':'true');
+   btn.setAttribute('aria-label',folded?'세부 펼치기':'세부 접기');
+  }
+ }
+ var ol=document.querySelector('.ol-b[data-oid="'+CSS.escape(foldOid(rid))+'"]');
+ if(ol){
+  ol.classList.toggle('collapsed',!!folded);
+  var tog=ol.querySelector('.ol-row > .ol-tog');
+  if(tog&&!tog.classList.contains('leaf'))tog.setAttribute('aria-expanded',folded?'false':'true');
+ }
+}
+function setFolded(rid,folded){
+ var m=loadCollapsed();
+ m[foldOid(rid)]=folded?1:0;
+ saveCollapsed(m);
+ applyFoldDom(rid,folded);
+}
+function toggleFold(rid){setFolded(rid,!isFolded(rid));}
 function outlineBlock(r,future){
  enrichExt(r);
  var sv=startOf(r),base=null;if(sv){var p=sv.split(':');base=(+p[0])*60+(+p[1]);}
- var col=loadCollapsed(),cid='c-'+r.rid,isCol=!!col[cid];
+ var col=loadCollapsed(),cid='c-'+r.rid,st=itemState(r.rid);
+ var isCol=Object.prototype.hasOwnProperty.call(col,cid)?!!col[cid]:(st==='done'||st==='skip');
  var kids='',cum=0,unk=false,hasKids=false;
  (r.tasks||[]).forEach(function(t,ti){
   var u=link(r,t),s0=cum,tm='';
@@ -1211,7 +1250,7 @@ function outlineBlock(r,future){
   var tDone=!!TASKS_DONE[tk(r.rid,r.date,t.id)];
   if(hasSteps){t.steps.forEach(function(x){steps+='<li class="ol-b"><div class="ol-row"><button type="button" class="ol-tog leaf" tabindex="-1" aria-hidden="true">▼</button><span class="ol-dot"></span><span class="ol-title">'+esc(x.title)+'</span></div></li>';});}
   hasKids=true;
-  var tid=cid+'-t'+ti,tCol=!!col[tid];
+  var tid=cid+'-t'+ti,tCol=Object.prototype.hasOwnProperty.call(col,tid)?!!col[tid]:false;
   var tStart=(base!=null&&t.min&&!unk)?clock(base,s0):'';
   kids+='<li class="ol-b'+(tCol?' collapsed':'')+'" data-oid="'+esc(tid)+'"><div class="ol-row"><button type="button" class="ol-tog'+(hasSteps?'':' leaf')+'" aria-expanded="'+(hasSteps&&!tCol?'true':'false')+'">▼</button><input type="checkbox" class="task-cb" aria-label="작업 완료" data-rid="'+esc(r.rid)+'" data-date="'+esc(r.date)+'" data-tid="'+esc(t.id)+'"'+(tDone?' checked':'')+'/>'
    +(tStart?'<span class="ol-time">'+esc(tStart)+'</span>':'')
@@ -1219,7 +1258,6 @@ function outlineBlock(r,future){
    +(hasSteps?'<ul class="ol-kids">'+steps+'</ul>':'')+'</li>';
  });
  var tags=(r.date<today?'<span class="tag">이전 날짜</span>':'')+(future?'<span class="tag">예정</span>':'');
- var st=itemState(r.rid);
  return '<li class="ol-b'+(isCol?' collapsed':'')+(st==='done'?' done':'')+(st==='skip'?' skip':'')+calClass(r)+'" id="'+esc(cid)+'" data-oid="'+esc(cid)+'"'+calStyleAttr(r)+'><div class="ol-row"><button type="button" class="ol-tog'+(hasKids?'':' leaf')+'" aria-expanded="'+(hasKids&&!isCol?'true':'false')+'">▼</button>'+stateBtnHtml(r.rid,st)+'<span class="ol-dot"></span>'
   +'<span class="ol-time">'+esc(sv||'--:--')+'</span><span class="ol-title">'+esc(displayTitle(r))+tags+'</span><span class="ol-ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</span></div>'
   +(hasKids?'<ul class="ol-kids">'+kids+'</ul>':'')+subtasksHtml(r.rid)+'</li>';
@@ -1491,10 +1529,16 @@ document.getElementById('list').addEventListener('click',function(e){
  e.preventDefault();
  var li=t.closest('.ol-b');if(!li)return;
  var oid=li.getAttribute('data-oid');if(!oid)return;
- li.classList.toggle('collapsed');
- var open=!li.classList.contains('collapsed');
- t.setAttribute('aria-expanded',open?'true':'false');
- var m=loadCollapsed();if(open)delete m[oid];else m[oid]=1;saveCollapsed(m);
+ var folded=!li.classList.contains('collapsed');
+ var m=loadCollapsed();m[oid]=folded?1:0;saveCollapsed(m);
+ if(/-t\d+$/.test(oid)){
+  li.classList.toggle('collapsed',folded);
+  t.setAttribute('aria-expanded',folded?'false':'true');
+ }else if(oid.indexOf('c-')===0)applyFoldDom(oid.slice(2),folded);
+ else{
+  li.classList.toggle('collapsed',folded);
+  t.setAttribute('aria-expanded',folded?'false':'true');
+ }
 });
 
 var SUBTASKS={}; // card_id -> [{id,title,done}]
@@ -1593,7 +1637,6 @@ function stateBtnHtml(rid,st){
 }
 function nextState(st){return st==='open'?'done':(st==='done'?'skip':'open');}
 function applyStateDom(rid,st){
- var nodes=document.querySelectorAll('[data-rid="'+CSS.escape(rid)+'"], #c-'+CSS.escape(rid)+', [data-oid="c-'+CSS.escape(rid)+'"]');
  // update buttons
  document.querySelectorAll('.done-cb[data-rid="'+CSS.escape(rid)+'"]').forEach(function(btn){
   btn.setAttribute('data-state',st);
@@ -1624,9 +1667,13 @@ function loadDone(){
 }
 function setState(rid,state){
  var prev=itemState(rid);
+ var prevFold=isFolded(rid);
  DONE[rid]=state==='open'?undefined:state;
  if(state==='open')delete DONE[rid];
  applyStateDom(rid,state);
+ // Done/skip always folds; open returns to default expanded (clears override).
+ if(state==='done'||state==='skip')setFolded(rid,true);
+ else{var m=loadCollapsed();delete m[foldOid(rid)];saveCollapsed(m);applyFoldDom(rid,false);}
  updateProg();
  fetch('api/done',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},
   body:JSON.stringify({date:today,item_id:rid,state:state})}).then(function(r){
@@ -1635,12 +1682,20 @@ function setState(rid,state){
  }).catch(function(){
   if(prev==='open')delete DONE[rid]; else DONE[rid]=prev;
   applyStateDom(rid,prev);
+  setFolded(rid,prevFold);
   updateProg();
   alert('완료 상태 저장에 실패했습니다. 잠시 후 다시 시도하세요.');
  });
 }
 function cycleState(rid){setState(rid,nextState(itemState(rid)));}
 document.getElementById('list').addEventListener('click',function(e){
+ var fold=e.target.closest('.card-fold');
+ if(fold){
+  e.preventDefault();
+  var frid=fold.getAttribute('data-rid');if(!frid)return;
+  toggleFold(frid);
+  return;
+ }
  var cb=e.target.closest('.done-cb');
  if(cb){
   e.preventDefault();

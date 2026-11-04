@@ -1021,7 +1021,7 @@ function saveTasksDone(){try{localStorage.setItem(TASK_KEY,JSON.stringify(TASKS_
 function tk(rid,date,tid){return rid+'|'+date+'|'+tid;}
 function setTaskDone(rid,date,tid,done){var k=tk(rid,date,tid);if(done)TASKS_DONE[k]=1;else delete TASKS_DONE[k];saveTasksDone();}
 function userStart(rid){return '';}
-function startOf(r){return userStart(r.rid)||r.start||'';}
+function startOf(r){return userStart(r.rid)||r.calStart||r.start||'';}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 // Banksalad: custom scheme best guess (unverified); App Store id1195804784 verified.
 var BANKSALAD_STORE='https://apps.apple.com/kr/app/id1195804784';
@@ -1131,7 +1131,7 @@ function card(r,future){
  }
  if(r.cal){var c=r.cal,SC={event:'단일 일정',series:'반복 일정 전체',occurrence:'반복 일정 특정 회차'},o=c.original_start_time||{},ot='';
   if(o.date)ot=o.date+' (종일)';else if(o.date_time){var d=new Date(o.date_time);ot=isNaN(d)?o.date_time:new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit'}).format(d)+' KST';}
-  h+='<div class="tm cal" title="'+esc(c.calendar_id+' / '+c.event_id)+'">📅 Google 캘린더 연결 · '+(SC[c.scope]||esc(c.scope))+(ot?' · '+esc(ot):'')+'</div>';}
+  h+='<div class="tm cal" title="'+esc(c.calendar_id+' / '+c.event_id)+'">📅 Google 캘린더 연결 · '+(SC[c.scope]||esc(c.scope))+(ot?' · '+esc(ot):'')+(r.calAttached?' · 오늘 일정':'')+'</div>';}
  // No separate "시작 HH:MM" — already in card-time.
  var cum=0,unk=false;
  if(stub){
@@ -1192,23 +1192,67 @@ function outlineBlock(r,future){
 function outline(items){
  return items.length?'<ul class="ol">'+items.map(function(o){return outlineBlock(o.r,o.f);}).join('')+'</ul>':'<div class="empty">오늘 루틴이 없습니다.</div>';
 }
-function eff(r){return userStart(r.rid)||r.start||'';}
+function eff(r){return startOf(r);}
 function byTime(x,y){return (eff(x)||'99:99').localeCompare(eff(y)||'99:99')||x.channel.localeCompare(y.channel)||x.title.localeCompare(y.title);}
 function getView(){try{var v=localStorage.getItem(VIEW_KEY);return v==='outline'?'outline':'card';}catch(e){return 'card';}}
 function setView(v){try{localStorage.setItem(VIEW_KEY,v);}catch(e){} updateToggle(v);}
 function updateToggle(v){document.querySelectorAll('#vtog button').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-v')===v);});}
+function normCalId(s){s=String(s||'').trim();try{s=decodeURIComponent(s);}catch(e){}return s;}
+function sameCalId(a,b){var x=normCalId(a),y=normCalId(b);return !!x&&(x===y||x.toLowerCase()===y.toLowerCase());}
+function originalStartEquals(ost,ev){
+ if(!ost)return false;
+ if(ost.date)return !!ev.allDay&&ost.date===ev.originalDate;
+ if(!ost.date_time)return false;
+ var ms=Date.parse(ost.date_time);
+ return isFinite(ms)&&ev.originalMs!=null&&Math.abs(ms-ev.originalMs)<1000;
+}
+function linkMatchesToday(link,ev){
+ if(!link||link.provider!=='google'||!ev)return false;
+ if(!sameCalId(link.calendar_id,ev.calendarId))return false;
+ var eid=String(link.event_id||''),base=String(ev.eventId||''),inst=String(ev.instanceId||'');
+ if(!eid||!base)return false;
+ if(link.scope==='series')return eid===base&&!!ev.recurring;
+ if(link.scope==='occurrence')return eid===base&&originalStartEquals(link.original_start_time,ev);
+ if(link.scope!=='event')return false;
+ if(eid===inst&&inst!==base)return true;
+ return eid===base&&!ev.recurring;
+}
 function collect(){
+ Object.keys(best).forEach(function(k){delete best[k].calStart;delete best[k].calAttached;});
  var a=Object.keys(best).map(function(k){return best[k];}).map(function(r){return {r:r,f:false};});
  Object.keys(next).filter(function(k){return !best[k];}).forEach(function(k){a.push({r:next[k],f:true});});
- // Drop a calendar event only when a routine card at the SAME start time already covers it
- // (first-word title/channel match). Same-name events at other times (e.g. Forge Master 21:00
- // vs morning Forge card) must still show.
+ // Attach a calendar event only when exactly one today's feed occurrence matches
+ // calendar_id + event_id (and original start, for a specific instance).
+ var pairs=[];
+ CAL.forEach(function(ev){
+  a.forEach(function(o){
+   if(o.f||o.r.date!==today)return;
+   if(linkMatchesToday(o.r.cal,ev))pairs.push({feed:o.r,ev:ev});
+  });
+ });
+ var byFeed={},byEv={};
+ pairs.forEach(function(p){
+  var fk=p.feed.rid,ek=p.ev.rid;
+  (byFeed[fk]=byFeed[fk]||[]).push(p);
+  (byEv[ek]=byEv[ek]||[]).push(p);
+ });
+ var attached={};
+ pairs.forEach(function(p){
+  if(byFeed[p.feed.rid].length!==1||byEv[p.ev.rid].length!==1)return;
+  attached[p.ev.rid]=p.feed;
+  p.feed.calAttached=true;
+  if(p.ev.start)p.feed.calStart=p.ev.start;
+ });
  CAL.forEach(function(r){
+  if(attached[r.rid])return;
+  if(byEv[r.rid]){a.push({r:r,f:false});return;}
+  // Unlinked events still collapse into a routine only when the start time matches
+  // and the title's first word is already in that routine. Other times stay visible.
   var w=(r.title.split(/[:(（]/)[0].trim().split(/\s+/)[0]||'').toLowerCase();
   var st=r.start||'';
   var dup=w.length>=2&&!!st&&a.some(function(o){
    if(o.f)return false;
-   var ost=eff(o.r)||'';
+   var ost=o.r.start||'';
    if(!ost||ost!==st)return false;
    var hay=(o.r.channel+' '+o.r.title).toLowerCase().replace(/\s+/g,'');
    return hay.indexOf(w)>=0;
@@ -1654,7 +1698,9 @@ function loadCal(){
  return fetch('api/today-cal?date='+encodeURIComponent(today)+'&_='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
   if(!j||!j.events){CAL=[];return;}
   CAL=j.events.map(function(e){var span=e.allDay?'종일':(e.start+'–'+e.end);var o={rid:calRid(e),date:today,start:e.allDay?'종일':e.start,title:e.title,channel:'캘린더 · '+e.calendar,calendar:e.calendar,links:[],pub:'',
-   tasks:[{id:'t',title:e.title+' ('+span+')',min:e.duration||null,steps:[]}]};
+   tasks:[{id:'t',title:e.title+' ('+span+')',min:e.duration||null,steps:[]}],
+   allDay:!!e.allDay,calendarId:e.calendarId||'',eventId:e.eventId||'',instanceId:e.instanceId||e.eventId||'',
+   recurring:!!e.recurring,originalMs:(typeof e.originalMs==='number'?e.originalMs:null),originalDate:e.originalDate||''};
    if(e.calendar==='Workout'){o.agent='804ba387-766e-4d91-8ffa-367b8b26bff9';}
    return o;});
  }).catch(function(){CAL=[];});

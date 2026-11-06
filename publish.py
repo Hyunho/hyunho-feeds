@@ -1776,6 +1776,9 @@ def wrangler(args, env, check=True):
 
 def deploy(sec):
     sync_secret_functions()
+    cal_fn = os.path.join(BASE, "functions", sec, "api", "today-cal.js")
+    if not os.path.isfile(cal_fn):
+        sys.exit("ERROR: missing %s — run scripts/sync-secret-functions.sh before deploy" % cal_fn)
     name = project()
     env = dict(os.environ, CLOUDFLARE_ACCOUNT_ID=account_id(), WRANGLER_SEND_METRICS="false")
     rc, out = wrangler(["project", "list", "--json"], env, check=False)
@@ -1789,6 +1792,20 @@ def deploy(sec):
     print("\n".join(l for l in out.splitlines() if "pages.dev" in l or "Success" in l or "Uploaded" in l))
     url = "https://%s.pages.dev/%s/feed.xml" % (name, sec)
     print("UNIFIED FEED URL:", url)
+    # Smoke: today-cal must be reachable or calendar cards (일과 시작 FIXED_ROUTINES) stay empty.
+    smoke = "https://%s.pages.dev/%s/api/today-cal" % (name, sec)
+    try:
+        req = urllib.request.Request(smoke, headers={"User-Agent": "hyunho-feeds-deploy-smoke"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read()
+            if resp.status != 200:
+                sys.exit("ERROR: deploy smoke today-cal HTTP %s" % resp.status)
+            data = json.loads(body.decode("utf-8"))
+            if "events" not in data:
+                sys.exit("ERROR: deploy smoke today-cal missing events key")
+            print("SMOKE OK: today-cal (%d events)" % len(data.get("events") or []))
+    except Exception as e:
+        sys.exit("ERROR: deploy smoke today-cal failed: %s\nURL: %s" % (e, smoke))
     return url
 
 

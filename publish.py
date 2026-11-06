@@ -65,11 +65,21 @@ def read_or_create(name, factory):
 
 
 def secret():
-    return read_or_create("secret.txt", lambda: subprocess.check_output(["openssl", "rand", "-hex", "16"], text=True).strip())
+    # Never invent a new secret on a fresh agent VM — deploying a random path
+    # would orphan the live /<secret>/today page the calendar links point at.
+    p = os.path.join(BASE, "secret.txt")
+    if os.path.exists(p):
+        v = open(p).read().strip()
+        if re.fullmatch(r"[0-9a-f]{32}", v):
+            return v
+        sys.exit("ERROR: secret.txt must be a 32-char lowercase hex path (got %r)" % (v[:12] + "…" if len(v) > 12 else v,))
+    sys.exit("ERROR: secret.txt missing — restore the production feed path secret before build/deploy")
 
 
 def project():
-    return read_or_create("project.txt", lambda: "hyunho-feeds-" + os.urandom(3).hex())
+    # Default to the live Pages project. Random hyunho-feeds-XXXXXX names
+    # created empty sandbox projects and left hyunho-feeds.pages.dev stale.
+    return read_or_create("project.txt", lambda: "hyunho-feeds")
 
 
 # ---------------- minimal markdown -> html ----------------

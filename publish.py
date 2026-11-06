@@ -1171,6 +1171,9 @@ function card(r,future){
   if(o.date)ot=o.date+' (종일)';else if(o.date_time){var d=new Date(o.date_time);ot=isNaN(d)?o.date_time:new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit'}).format(d)+' KST';}
   h+='<div class="tm cal" title="'+esc(c.calendar_id+' / '+c.event_id)+'">📅 Google 캘린더 연결 · '+(SC[c.scope]||esc(c.scope))+(ot?' · '+esc(ot):'')+(r.calAttached?' · 오늘 일정':'')+'</div>';}
  else if(r.fixedRoutine){h+='<div class="tm cal">고정 세부 루틴 · 캘린더 일정</div>';}
+ if(CAL_STALE&&r.channel&&String(r.channel).indexOf('캘린더')===0){
+  h+='<div class="meta"><span class="tag">캘린더 캐시</span></div>';
+ }
  // No separate "시작 HH:MM" — already in card-time.
  var cum=0,unk=false;
  if(stub){
@@ -1784,16 +1787,40 @@ function calRid(e){
  }
  return 'cal-'+raw;
 }
+// Last successful today-cal payload per KST date. Used when the live API is down (404/network).
+var CAL_KEY='today-cal-cache-v1';
+var CAL_STALE=false;
+function calCacheKey(date){return CAL_KEY+'|'+date;}
+function readCalCache(date){
+ try{
+  var o=JSON.parse(localStorage.getItem(calCacheKey(date))||'null');
+  if(!o||!Array.isArray(o.events))return null;
+  return o;
+ }catch(e){return null;}
+}
+function writeCalCache(date,events){
+ try{localStorage.setItem(calCacheKey(date),JSON.stringify({savedAt:Date.now(),events:events||[]}));}catch(e){}
+}
+function mapCalEvents(events){
+ return (events||[]).map(function(e){var span=e.allDay?'종일':(e.start+'–'+e.end);var o={rid:calRid(e),date:today,start:e.allDay?'종일':e.start,title:e.title,channel:'캘린더 · '+e.calendar,calendar:e.calendar,links:[],pub:'',
+  tasks:[{id:'t',title:e.title+' ('+span+')',min:e.duration||null,steps:[]}],
+  allDay:!!e.allDay,calendarId:e.calendarId||'',eventId:e.eventId||'',instanceId:e.instanceId||e.eventId||'',
+  recurring:!!e.recurring,originalMs:(typeof e.originalMs==='number'?e.originalMs:null),originalDate:e.originalDate||''};
+  if(e.calendar==='Workout'){o.agent='804ba387-766e-4d91-8ffa-367b8b26bff9';}
+  return applyFixedRoutine(o);});
+}
+function applyCalCacheFallback(){
+ var cached=readCalCache(today);
+ if(!cached){CAL=[];CAL_STALE=false;return false;}
+ CAL=mapCalEvents(cached.events);CAL_STALE=true;return true;
+}
 function loadCal(){
  return fetch('api/today-cal?date='+encodeURIComponent(today)+'&_='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
-  if(!j||!j.events){CAL=[];return;}
-  CAL=j.events.map(function(e){var span=e.allDay?'종일':(e.start+'–'+e.end);var o={rid:calRid(e),date:today,start:e.allDay?'종일':e.start,title:e.title,channel:'캘린더 · '+e.calendar,calendar:e.calendar,links:[],pub:'',
-   tasks:[{id:'t',title:e.title+' ('+span+')',min:e.duration||null,steps:[]}],
-   allDay:!!e.allDay,calendarId:e.calendarId||'',eventId:e.eventId||'',instanceId:e.instanceId||e.eventId||'',
-   recurring:!!e.recurring,originalMs:(typeof e.originalMs==='number'?e.originalMs:null),originalDate:e.originalDate||''};
-   if(e.calendar==='Workout'){o.agent='804ba387-766e-4d91-8ffa-367b8b26bff9';}
-   return applyFixedRoutine(o);});
- }).catch(function(){CAL=[];});
+  if(j&&Array.isArray(j.events)){
+   writeCalCache(today,j.events);CAL_STALE=false;CAL=mapCalEvents(j.events);return;
+  }
+  applyCalCacheFallback();
+ }).catch(function(){applyCalCacheFallback();});
 }
 var refreshing=false;
 function refreshToday(opts){
@@ -2011,6 +2038,9 @@ def wrangler(args, env, check=True):
 
 def deploy(sec):
     sync_secret_functions()
+    cal_fn = os.path.join(BASE, "functions", sec, "api", "today-cal.js")
+    if not os.path.isfile(cal_fn):
+        sys.exit("ERROR: missing %s — run scripts/sync-secret-functions.sh before deploy" % cal_fn)
     name = project()
     env = dict(os.environ, CLOUDFLARE_ACCOUNT_ID=account_id(), WRANGLER_SEND_METRICS="false")
     rc, out = wrangler(["project", "list", "--json"], env, check=False)
@@ -2024,6 +2054,20 @@ def deploy(sec):
     print("\n".join(l for l in out.splitlines() if "pages.dev" in l or "Success" in l or "Uploaded" in l))
     url = "https://%s.pages.dev/%s/feed.xml" % (name, sec)
     print("UNIFIED FEED URL:", url)
+    # Smoke: today-cal must be reachable or calendar cards (일과 시작 FIXED_ROUTINES) stay empty.
+    smoke = "https://%s.pages.dev/%s/api/today-cal" % (name, sec)
+    try:
+        req = urllib.request.Request(smoke, headers={"User-Agent": "hyunho-feeds-deploy-smoke"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read()
+            if resp.status != 200:
+                sys.exit("ERROR: deploy smoke today-cal HTTP %s" % resp.status)
+            data = json.loads(body.decode("utf-8"))
+            if "events" not in data:
+                sys.exit("ERROR: deploy smoke today-cal missing events key")
+            print("SMOKE OK: today-cal (%d events)" % len(data.get("events") or []))
+    except Exception as e:
+        sys.exit("ERROR: deploy smoke today-cal failed: %s\nURL: %s" % (e, smoke))
     return url
 
 

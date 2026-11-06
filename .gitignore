@@ -28,3 +28,11 @@ __pycache__/
 # Local env
 .env
 .env.*
+.dev.vars
+
+# Live Pages function path generated from secret.txt. Keep tracked sources.
+functions/*
+!functions/_secret_/
+!functions/_secret_/**
+!functions/api/
+!functions/api/**

@@ -853,16 +853,21 @@ main{max-width:40rem;margin:0 auto}h1{font-size:1.5rem;margin:.2rem 0}.sub{color
 .ol-b.cal-ev>.ol-row{position:relative;padding-left:.7rem}
 .ol-b.cal-ev>.ol-row::before{content:"";position:absolute;left:.15rem;top:.35rem;bottom:.35rem;width:.28rem;border-radius:4px;background:var(--cal,#888)}
 .ol-b.cal-ev>.ol-row .ol-dot{background:var(--cal,#888)}
-#toc a.cal-ev,#toc-sheet-list a.cal-ev{box-shadow:inset .28rem 0 0 var(--cal,#888)}
-.card.done,.card.skip{opacity:.7;padding:.45rem .85rem;margin:0 0 .45rem;box-shadow:none}
-.card.done .card-title,.card.skip .card-title{text-decoration:line-through;color:var(--sub);font-weight:500;font-size:1rem}
+#toc-sheet-list a.cal-ev{box-shadow:inset .28rem 0 0 var(--cal,#888)}
+/* Fold is driven by .collapsed (manual toggle or auto on done/skip).
+   Routine done/skip does not rewrite feed-task / D1 subtask checkbox values. */
+.card.done .card-title,.card.skip .card-title{text-decoration:line-through;color:var(--sub);font-weight:500}
 .card.done .card-time,.card.skip .card-time{color:var(--sub)}
-.card.done .meta,.card.done .tm,.card.done .cal,.card.done ol.tl,.card.done .tot,.card.done .subtasks,
-.card.skip .meta,.card.skip .tm,.card.skip .cal,.card.skip ol.tl,.card.skip .tot,.card.skip .subtasks{display:none}
-.card.done .ch,.card.skip .ch{display:block;margin:0 0 .2rem;font-size:.72rem;opacity:.9}
-.card.done .card-title-row,.card.skip .card-title-row{margin:0}
-.card.skip{opacity:.62}
 .card.skip .card-title{color:#8b9198}
+.card.collapsed{opacity:.7;padding:.45rem .85rem;margin:0 0 .45rem;box-shadow:none}
+.card.collapsed .card-title{font-size:1rem}
+.card.collapsed .meta,.card.collapsed .tm,.card.collapsed .cal,.card.collapsed ol.tl,.card.collapsed .tot,.card.collapsed .subtasks{display:none}
+.card.collapsed .ch{display:block;margin:0 0 .2rem;font-size:.72rem;opacity:.9}
+.card.collapsed .card-title-row{margin:0}
+.card.skip.collapsed{opacity:.62}
+.card-fold{flex:0 0 1.15rem;width:1.15rem;height:1.15rem;margin:0;padding:0;border:0;border-radius:4px;background:transparent;color:var(--sub);cursor:pointer;font-size:.65rem;line-height:1.15rem;text-align:center;-webkit-tap-highlight-color:transparent}
+.card-fold:hover{background:var(--ol-hover);color:var(--fg)}
+.card.collapsed .card-fold{transform:rotate(-90deg)}
 .done-cb{flex:0 0 auto;width:1.15rem;height:1.15rem;margin:0;padding:0;border:2px solid var(--line);border-radius:4px;background:var(--card);color:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:.85rem;line-height:1;font-weight:700;-webkit-tap-highlight-color:transparent;box-sizing:border-box}
 .done-cb[data-state="done"]{background:var(--acc);border-color:var(--acc);color:#fff}
 .done-cb[data-state="done"]::before{content:"✓"}
@@ -927,10 +932,37 @@ ul.ol ul{padding-left:1.35rem;border-left:1px solid var(--line);margin-left:.55r
 .st-add button{flex:0 0 auto;font-size:.85rem;padding:.35rem .7rem;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
 .ol-b > .subtasks{margin:.15rem 0 .35rem 1.55rem;border-top:0;padding-top:0}
 @media(max-width:520px){.ol-b > .subtasks{margin-left:1.1rem}}
-#toc{display:none}@media(min-width:1100px){#toc{display:block;position:fixed;top:2rem;left:max(1rem,calc(50% - 20rem - 17rem));width:15rem;max-height:calc(100vh - 4rem);overflow:auto;font-size:.88rem}#toc h3{font-size:.95rem;margin:0 0 .5rem}#toc a{display:flex;gap:.5rem;padding:.3rem .4rem;border-radius:6px;text-decoration:none;color:inherit}#toc a:hover{background:rgba(127,127,127,.15)}#toc .t{color:var(--sub);font-variant-numeric:tabular-nums;min-width:2.8rem}.card,.ol-b{scroll-margin-top:1rem}}
-/* Mobile bottom-sheet TOC (<1100px) */
+#toc{display:none}@media(min-width:1220px){
+#toc{display:flex;flex-direction:column;position:fixed;top:2rem;left:max(1rem,calc(50% - 20rem - 18.25rem));width:17rem;height:calc(100vh - 4rem);max-height:calc(100vh - 4rem);overflow:auto;font-size:.78rem;padding:0 .15rem .2rem 0}
+#toc h3{font-size:.95rem;margin:0 0 .85rem;flex:0 0 auto}
+.tt-all{display:flex;flex-direction:column;gap:.05rem;margin:0 0 .8rem;flex:0 0 auto}
+.tt-all a{display:block;padding:.05rem .2rem;border:0;border-radius:4px;text-decoration:none;color:inherit;background:transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+.tt-all a .t{color:var(--sub);margin-right:.35rem;font-variant-numeric:tabular-nums}
+.tt-all a:hover{background:var(--ol-hover)}
+.tt-all a.cal-ev{color:var(--cal,#888)}
+.tt-all a.toc-done,.tt-all a.toc-skip{opacity:.5;text-decoration:line-through}
+.tt-all a.toc-now{font-weight:700;color:var(--acc)}
+.tt-scale{position:relative;flex:1 1 auto;display:flex;flex-direction:column;min-height:min-content}
+.tt-hour{position:relative;flex:1 1 0;min-height:1.35rem}
+.tt-hour::before{content:"";position:absolute;left:2.5rem;right:0;top:0;border-top:1px solid var(--line);opacity:.4}
+.tt-hour>.tt-hl,.tt-end .tt-hl{position:absolute;left:0;width:2.05rem;text-align:right;color:var(--sub);font-size:.68rem;font-variant-numeric:tabular-nums;line-height:1.35rem}
+.tt-hour>.tt-hl{top:-.62rem}
+.tt-end{position:relative;flex:0 0 .15rem;height:.15rem}
+.tt-end::before{content:"";position:absolute;left:2.5rem;right:0;top:0;border-top:1px solid var(--line);opacity:.4}
+.tt-end .tt-hl{top:-1.2rem}
+.tt-track{position:absolute;left:2.5rem;right:0;top:0;bottom:.15rem}
+.tt-now{position:absolute;left:-.4rem;width:.62rem;height:0;border-top:2px solid #e5484d;z-index:4;pointer-events:none}
+.tt-now i{position:absolute;left:-.28rem;top:-.28rem;width:.45rem;height:.45rem;border-radius:50%;background:#e5484d;display:block}
+.tt-ev{position:absolute;left:0;right:0;height:1.35rem;min-height:1.35rem;line-height:1.35rem;padding:0 .2rem;border:0;border-radius:4px;box-shadow:none;background:transparent;text-decoration:none;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:1}
+.tt-ev:hover{background:var(--ol-hover)}
+.tt-ev.cal-ev{color:var(--cal,#888)}
+.tt-ev.tt-future{opacity:.7}
+.tt-ev.toc-done,.tt-ev.toc-skip{opacity:.5;text-decoration:line-through}
+.tt-ev.toc-now{font-weight:700;color:var(--acc)}
+.card,.ol-b{scroll-margin-top:1rem}}
+/* Bottom-sheet TOC when the left timetable does not fit */
 #toc-fab,#toc-sheet,#toc-backdrop{display:none}
-@media(max-width:1099.98px){
+@media(max-width:1219.98px){
 #toc-fab{display:flex;position:fixed;right:max(1rem,env(safe-area-inset-right));bottom:max(1rem,calc(.75rem + env(safe-area-inset-bottom)));z-index:40;align-items:center;justify-content:center;gap:.35rem;min-height:2.75rem;padding:.65rem 1.1rem;border:0;border-radius:999px;background:var(--acc);color:#fff;font:600 .95rem/1 -apple-system,system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.22);cursor:pointer}
 @media (prefers-color-scheme:dark){#toc-fab{color:#0b0b0f}}
 #toc-backdrop{display:block;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .2s}
@@ -986,7 +1018,7 @@ D.forEach(function(r){
 var KEY='today-routine-start';
 var VIEW_KEY='today-view-mode';
 if(!window.CSS)window.CSS={};if(typeof CSS.escape!=='function'){CSS.escape=function(s){return String(s).replace(/[^a-zA-Z0-9_-]/g,function(c){return '\\'+c;});};}
-var COL_KEY='today-outline-collapsed';
+var COL_KEY='today-outline-collapsed'; // oid -> 1 folded, 0 expanded; absent = default by routine state
 var TASK_KEY='today-routine-task-done';
 var TASKS_DONE={};
 function loadTasksDone(){try{TASKS_DONE=JSON.parse(localStorage.getItem(TASK_KEY)||'{}')||{};}catch(e){TASKS_DONE={};}}
@@ -994,7 +1026,7 @@ function saveTasksDone(){try{localStorage.setItem(TASK_KEY,JSON.stringify(TASKS_
 function tk(rid,date,tid){return rid+'|'+date+'|'+tid;}
 function setTaskDone(rid,date,tid,done){var k=tk(rid,date,tid);if(done)TASKS_DONE[k]=1;else delete TASKS_DONE[k];saveTasksDone();}
 function userStart(rid){return '';}
-function startOf(r){return userStart(r.rid)||r.start||'';}
+function startOf(r){return userStart(r.rid)||r.calStart||r.start||'';}
 // Fixed detailed routines for calendar cards (no feed required). Matched by Google event id, then title.
 var FIXED_ROUTINES=[
  {eventId:'hepgfaqcark07inovjan8tq6ec',title:'일과 시작',calendar:'Routine',tasks:[
@@ -1127,6 +1159,7 @@ function link(r,t){var tl=t.title.toLowerCase();for(var i=0;i<r.links.length;i++
 function card(r,future){
  var sv=startOf(r),own=!!userStart(r.rid),base=null;if(sv){var p=sv.split(':');base=(+p[0])*60+(+p[1]);}
  var st=itemState(r.rid),isDone=st==='done',isSkip=st==='skip';
+ var folded=isFolded(r.rid);
  var tasks=r.tasks||[];
  // Calendar stub: one synthetic task that only echoes the card title (+ time range).
  var stub=tasks.length===1 && !tasks[0].steps.length && (function(){
@@ -1134,16 +1167,19 @@ function card(r,future){
   return !tt || tt===ti || tt.indexOf(ti+' (')===0 || tt.indexOf(ti+'(')===0;
  })();
  enrichExt(r);
- var h='<div class="card'+(isDone?' done':'')+(isSkip?' skip':'')+calClass(r)+'" id="c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+calStyleAttr(r)+'><div class="ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</div>';
- h+='<div class="card-title-row">'+stateBtnHtml(r.rid,st)+'<span class="card-time">'+esc(sv||'--:--')+'</span><h2 class="card-title">'+esc(displayTitle(r))+'</h2></div>';
+ var h='<div class="card'+(isDone?' done':'')+(isSkip?' skip':'')+(folded?' collapsed':'')+calClass(r)+'" id="c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+calStyleAttr(r)+'><div class="ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</div>';
+ h+='<div class="card-title-row">'+foldBtnHtml(r.rid,folded)+stateBtnHtml(r.rid,st)+'<span class="card-time">'+esc(sv||'--:--')+'</span><h2 class="card-title">'+esc(displayTitle(r))+'</h2></div>';
  // Meta only when not "today" (page header already says today) or when tagged.
  if(r.date!==today||future||r.date<today||r.fixedRoutine){
   h+='<div class="meta">'+label(r.date)+(future?' 예정':' 루틴')+(r.date<today?'<span class="tag">이전 날짜</span>':'')+(future?'<span class="tag">예정</span>':'')+(r.fixedRoutine?'<span class="tag">고정 세부 루틴</span>':'')+'</div>';
  }
  if(r.cal){var c=r.cal,SC={event:'단일 일정',series:'반복 일정 전체',occurrence:'반복 일정 특정 회차'},o=c.original_start_time||{},ot='';
   if(o.date)ot=o.date+' (종일)';else if(o.date_time){var d=new Date(o.date_time);ot=isNaN(d)?o.date_time:new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit'}).format(d)+' KST';}
-  h+='<div class="tm cal" title="'+esc(c.calendar_id+' / '+c.event_id)+'">📅 Google 캘린더 연결 · '+(SC[c.scope]||esc(c.scope))+(ot?' · '+esc(ot):'')+'</div>';}
+  h+='<div class="tm cal" title="'+esc(c.calendar_id+' / '+c.event_id)+'">📅 Google 캘린더 연결 · '+(SC[c.scope]||esc(c.scope))+(ot?' · '+esc(ot):'')+(r.calAttached?' · 오늘 일정':'')+'</div>';}
  else if(r.fixedRoutine){h+='<div class="tm cal">고정 세부 루틴 · 캘린더 일정</div>';}
+ if(CAL_STALE&&r.channel&&String(r.channel).indexOf('캘린더')===0){
+  h+='<div class="meta"><span class="tag">캘린더 캐시</span></div>';
+ }
  // No separate "시작 HH:MM" — already in card-time.
  var cum=0,unk=false;
  if(stub){
@@ -1176,10 +1212,45 @@ function card(r,future){
 }
 function loadCollapsed(){try{return JSON.parse(localStorage.getItem(COL_KEY)||'{}')||{};}catch(e){return {};}}
 function saveCollapsed(m){try{localStorage.setItem(COL_KEY,JSON.stringify(m));}catch(e){}}
+function foldOid(rid){return 'c-'+rid;}
+function isFolded(rid){
+ var oid=foldOid(rid),m=loadCollapsed();
+ if(Object.prototype.hasOwnProperty.call(m,oid))return !!m[oid];
+ var st=itemState(rid);
+ return st==='done'||st==='skip';
+}
+function foldBtnHtml(rid,folded){
+ return '<button type="button" class="card-fold" data-rid="'+esc(rid)+'" aria-expanded="'+(folded?'false':'true')+'" aria-label="'+(folded?'세부 펼치기':'세부 접기')+'" title="세부 접기/펼치기">▼</button>';
+}
+function applyFoldDom(rid,folded){
+ var card=document.getElementById('c-'+rid);
+ if(card){
+  card.classList.toggle('collapsed',!!folded);
+  var btn=card.querySelector('.card-fold');
+  if(btn){
+   btn.setAttribute('aria-expanded',folded?'false':'true');
+   btn.setAttribute('aria-label',folded?'세부 펼치기':'세부 접기');
+  }
+ }
+ var ol=document.querySelector('.ol-b[data-oid="'+CSS.escape(foldOid(rid))+'"]');
+ if(ol){
+  ol.classList.toggle('collapsed',!!folded);
+  var tog=ol.querySelector('.ol-row > .ol-tog');
+  if(tog&&!tog.classList.contains('leaf'))tog.setAttribute('aria-expanded',folded?'false':'true');
+ }
+}
+function setFolded(rid,folded){
+ var m=loadCollapsed();
+ m[foldOid(rid)]=folded?1:0;
+ saveCollapsed(m);
+ applyFoldDom(rid,folded);
+}
+function toggleFold(rid){setFolded(rid,!isFolded(rid));}
 function outlineBlock(r,future){
  enrichExt(r);
  var sv=startOf(r),base=null;if(sv){var p=sv.split(':');base=(+p[0])*60+(+p[1]);}
- var col=loadCollapsed(),cid='c-'+r.rid,isCol=!!col[cid];
+ var col=loadCollapsed(),cid='c-'+r.rid,st=itemState(r.rid);
+ var isCol=Object.prototype.hasOwnProperty.call(col,cid)?!!col[cid]:(st==='done'||st==='skip');
  var kids='',cum=0,unk=false,hasKids=false;
  (r.tasks||[]).forEach(function(t,ti){
   var u=link(r,t),s0=cum,tm='';
@@ -1188,7 +1259,7 @@ function outlineBlock(r,future){
   var tDone=!!TASKS_DONE[tk(r.rid,r.date,t.id)];
   if(hasSteps){t.steps.forEach(function(x){steps+='<li class="ol-b"><div class="ol-row"><button type="button" class="ol-tog leaf" tabindex="-1" aria-hidden="true">▼</button><span class="ol-dot"></span><span class="ol-title">'+esc(x.title)+'</span></div></li>';});}
   hasKids=true;
-  var tid=cid+'-t'+ti,tCol=!!col[tid];
+  var tid=cid+'-t'+ti,tCol=Object.prototype.hasOwnProperty.call(col,tid)?!!col[tid]:false;
   var tStart=(base!=null&&t.min&&!unk)?clock(base,s0):'';
   kids+='<li class="ol-b'+(tCol?' collapsed':'')+'" data-oid="'+esc(tid)+'"><div class="ol-row"><button type="button" class="ol-tog'+(hasSteps?'':' leaf')+'" aria-expanded="'+(hasSteps&&!tCol?'true':'false')+'">▼</button><input type="checkbox" class="task-cb" aria-label="작업 완료" data-rid="'+esc(r.rid)+'" data-date="'+esc(r.date)+'" data-tid="'+esc(t.id)+'"'+(tDone?' checked':'')+'/>'
    +(tStart?'<span class="ol-time">'+esc(tStart)+'</span>':'')
@@ -1196,7 +1267,6 @@ function outlineBlock(r,future){
    +(hasSteps?'<ul class="ol-kids">'+steps+'</ul>':'')+'</li>';
  });
  var tags=(r.date<today?'<span class="tag">이전 날짜</span>':'')+(future?'<span class="tag">예정</span>':'');
- var st=itemState(r.rid);
  return '<li class="ol-b'+(isCol?' collapsed':'')+(st==='done'?' done':'')+(st==='skip'?' skip':'')+calClass(r)+'" id="'+esc(cid)+'" data-oid="'+esc(cid)+'"'+calStyleAttr(r)+'><div class="ol-row"><button type="button" class="ol-tog'+(hasKids?'':' leaf')+'" aria-expanded="'+(hasKids&&!isCol?'true':'false')+'">▼</button>'+stateBtnHtml(r.rid,st)+'<span class="ol-dot"></span>'
   +'<span class="ol-time">'+esc(sv||'--:--')+'</span><span class="ol-title">'+esc(displayTitle(r))+tags+'</span><span class="ol-ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</span></div>'
   +(hasKids?'<ul class="ol-kids">'+kids+'</ul>':'')+subtasksHtml(r.rid)+'</li>';
@@ -1204,23 +1274,67 @@ function outlineBlock(r,future){
 function outline(items){
  return items.length?'<ul class="ol">'+items.map(function(o){return outlineBlock(o.r,o.f);}).join('')+'</ul>':'<div class="empty">오늘 루틴이 없습니다.</div>';
 }
-function eff(r){return userStart(r.rid)||r.start||'';}
+function eff(r){return startOf(r);}
 function byTime(x,y){return (eff(x)||'99:99').localeCompare(eff(y)||'99:99')||x.channel.localeCompare(y.channel)||x.title.localeCompare(y.title);}
 function getView(){try{var v=localStorage.getItem(VIEW_KEY);return v==='outline'?'outline':'card';}catch(e){return 'card';}}
 function setView(v){try{localStorage.setItem(VIEW_KEY,v);}catch(e){} updateToggle(v);}
 function updateToggle(v){document.querySelectorAll('#vtog button').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-v')===v);});}
+function normCalId(s){s=String(s||'').trim();try{s=decodeURIComponent(s);}catch(e){}return s;}
+function sameCalId(a,b){var x=normCalId(a),y=normCalId(b);return !!x&&(x===y||x.toLowerCase()===y.toLowerCase());}
+function originalStartEquals(ost,ev){
+ if(!ost)return false;
+ if(ost.date)return !!ev.allDay&&ost.date===ev.originalDate;
+ if(!ost.date_time)return false;
+ var ms=Date.parse(ost.date_time);
+ return isFinite(ms)&&ev.originalMs!=null&&Math.abs(ms-ev.originalMs)<1000;
+}
+function linkMatchesToday(link,ev){
+ if(!link||link.provider!=='google'||!ev)return false;
+ if(!sameCalId(link.calendar_id,ev.calendarId))return false;
+ var eid=String(link.event_id||''),base=String(ev.eventId||''),inst=String(ev.instanceId||'');
+ if(!eid||!base)return false;
+ if(link.scope==='series')return eid===base&&!!ev.recurring;
+ if(link.scope==='occurrence')return eid===base&&originalStartEquals(link.original_start_time,ev);
+ if(link.scope!=='event')return false;
+ if(eid===inst&&inst!==base)return true;
+ return eid===base&&!ev.recurring;
+}
 function collect(){
+ Object.keys(best).forEach(function(k){delete best[k].calStart;delete best[k].calAttached;});
  var a=Object.keys(best).map(function(k){return best[k];}).map(function(r){return {r:r,f:false};});
  Object.keys(next).filter(function(k){return !best[k];}).forEach(function(k){a.push({r:next[k],f:true});});
- // Drop a calendar event only when a routine card at the SAME start time already covers it
- // (first-word title/channel match). Same-name events at other times (e.g. Forge Master 21:00
- // vs morning Forge card) must still show.
+ // Attach a calendar event only when exactly one today's feed occurrence matches
+ // calendar_id + event_id (and original start, for a specific instance).
+ var pairs=[];
+ CAL.forEach(function(ev){
+  a.forEach(function(o){
+   if(o.f||o.r.date!==today)return;
+   if(linkMatchesToday(o.r.cal,ev))pairs.push({feed:o.r,ev:ev});
+  });
+ });
+ var byFeed={},byEv={};
+ pairs.forEach(function(p){
+  var fk=p.feed.rid,ek=p.ev.rid;
+  (byFeed[fk]=byFeed[fk]||[]).push(p);
+  (byEv[ek]=byEv[ek]||[]).push(p);
+ });
+ var attached={};
+ pairs.forEach(function(p){
+  if(byFeed[p.feed.rid].length!==1||byEv[p.ev.rid].length!==1)return;
+  attached[p.ev.rid]=p.feed;
+  p.feed.calAttached=true;
+  if(p.ev.start)p.feed.calStart=p.ev.start;
+ });
  CAL.forEach(function(r){
+  if(attached[r.rid])return;
+  if(byEv[r.rid]){a.push({r:r,f:false});return;}
+  // Unlinked events still collapse into a routine only when the start time matches
+  // and the title's first word is already in that routine. Other times stay visible.
   var w=(r.title.split(/[:(（]/)[0].trim().split(/\s+/)[0]||'').toLowerCase();
   var st=r.start||'';
   var dup=w.length>=2&&!!st&&a.some(function(o){
    if(o.f)return false;
-   var ost=eff(o.r)||'';
+   var ost=o.r.start||'';
    if(!ost||ost!==st)return false;
    var hay=(o.r.channel+' '+o.r.title).toLowerCase().replace(/\s+/g,'');
    return hay.indexOf(w)>=0;
@@ -1269,8 +1383,99 @@ function tocLinksHtml(a){
   return '<a href="#c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+(cls.length?' class="'+cls.join(' ')+'"':'')+calStyleAttr(r)+'><span class="t">'+esc(r.start||'--:--')+'</span><span>'+esc(displayTitle(r))+'</span></a>';
  }).join('');
 }
+var TT_START=5*60, TT_END=24*60;
+function hmToMin(hm){var m=/^(\d{2}):(\d{2})$/.exec(hm||'');return m?(+m[1])*60+(+m[2]):null;}
+function minToHM(mins){mins=((mins%1440)+1440)%1440;return String(Math.floor(mins/60)).padStart(2,'0')+':'+String(mins%60).padStart(2,'0');}
+function blockSpan(r){
+ var sm=hmToMin(eff(r)||'');
+ if(sm==null)return null;
+ var mins=0,any=false;
+ (r.tasks||[]).forEach(function(t){if(t.min){mins+=(+t.min)||0;any=true;}});
+ if(!any)mins=30;
+ return {start:sm,end:sm+Math.max(mins,1)};
+}
+function tocClassList(r,hl){
+ var cls=[];
+ var st=itemState(r.rid);if(st==='done')cls.push('toc-done');else if(st==='skip')cls.push('toc-skip');
+ if(hl.cur&&r.rid===hl.cur)cls.push('toc-now');
+ else if(hl.nxt&&r.rid===hl.nxt)cls.push('toc-next');
+ if(calColorOf(r))cls.push('cal-ev');
+ return cls;
+}
+function timetableHtml(a){
+ var hl=tocHighlight(a),outside=[],blocks=[];
+ a.forEach(function(o){
+  var sp=blockSpan(o.r);
+  if(!sp||sp.end<=TT_START||sp.start>=TT_END){outside.push(o);return;}
+  blocks.push({o:o,r:o.r,vs:Math.max(sp.start,TT_START)});
+ });
+ blocks.sort(function(x,y){return x.vs-y.vs||x.r.title.localeCompare(y.r.title);});
+ var hoursHtml='';
+ for(var h=5;h<=23;h++)hoursHtml+='<div class="tt-hour" data-hour="'+h+'"><span class="tt-hl">'+String(h).padStart(2,'0')+'</span></div>';
+ var evHtml=blocks.map(function(b){
+  var r=b.r,cls=['tt-ev'].concat(tocClassList(r,hl));
+  if(b.o.f)cls.push('tt-future');
+  var title=displayTitle(r)+(b.o.f?' (예정)':'');
+  var col=calColorOf(r);
+  return '<a class="'+cls.join(' ')+'" href="#c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'" data-vs="'+b.vs+'"'
+   +(col?' style="--cal:'+col+'"':'')+' title="'+esc(minToHM(b.vs)+' '+title)+'">'+esc(displayTitle(r))+'</a>';
+ }).join('');
+ var outHtml=outside.map(function(o){
+  var r=o.r,cls=tocClassList(r,hl);
+  var t=r.start||(o.f?'예정':'종일');
+  return '<a href="#c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+(cls.length?' class="'+cls.join(' ')+'"':'')+calStyleAttr(r)+'><span class="t">'+esc(t)+'</span>'+esc(displayTitle(r))+'</a>';
+ }).join('');
+ return '<h3>루틴 / 일정</h3>'+(outHtml?'<div class="tt-all">'+outHtml+'</div>':'')
+  +'<div class="tt-scale">'+hoursHtml+'<div class="tt-end"><span class="tt-hl">24</span></div><div class="tt-track">'+evHtml+'<div class="tt-now"><i></i></div></div></div>';
+}
+function placeEvents(){
+ var track=document.querySelector('#toc .tt-track');
+ if(!track)return;
+ var scale=track.parentNode;
+ var els=[].slice.call(track.querySelectorAll('.tt-ev'));
+ var MIN=els.length?(els[0].offsetHeight||22):22,GAP=2;
+ for(var pass=0;pass<4;pass++){
+  var H=track.clientHeight;
+  if(H<40)break;
+  var cursor=0;
+  els.forEach(function(el){
+   var vs=+el.getAttribute('data-vs');
+   var ideal=(vs-TT_START)/(TT_END-TT_START)*H;
+   if(ideal<0)ideal=0;
+   var top=Math.max(ideal,cursor);
+   el.style.top=top.toFixed(1)+'px';
+   cursor=top+MIN+GAP;
+  });
+  var overflow=cursor-GAP-H;
+  if(overflow<=1)break;
+  scale.style.minHeight=(scale.offsetHeight+overflow)+'px';
+ }
+ placeNowLine();
+}
+function placeNowLine(){
+ var track=document.querySelector('#toc .tt-track');
+ var now=document.querySelector('#toc .tt-now');
+ if(!track||!now)return;
+ var m=hmToMin(kstNowHM());
+ if(m==null||m<TT_START||m>=TT_END){now.style.display='none';return;}
+ var H=track.clientHeight;
+ now.style.display='';
+ now.style.top=Math.max(0,Math.min(H,((m-TT_START)/(TT_END-TT_START))*H)).toFixed(1)+'px';
+}
 function fillToc(a){
- document.getElementById('toc').innerHTML=a.length?'<h3>루틴 / 일정</h3>'+tocLinksHtml(a):'';
+ var toc=document.getElementById('toc');
+ var prev=toc.scrollTop,seen=toc.getAttribute('data-scrolled')==='1';
+ toc.innerHTML=timetableHtml(a);
+ placeEvents();
+ if(!seen){
+  var now=toc.querySelector('.tt-now');
+  if(now){
+   var y=0,el=now;
+   while(el&&el!==toc){y+=el.offsetTop;el=el.offsetParent;}
+   toc.scrollTop=Math.max(0,y-toc.clientHeight*0.35);
+  }
+  toc.setAttribute('data-scrolled','1');
+ }else toc.scrollTop=prev;
  var sheetList=document.getElementById('toc-sheet-list');
  if(sheetList)sheetList.innerHTML=tocLinksHtml(a);
  var fab=document.getElementById('toc-fab');
@@ -1333,10 +1538,16 @@ document.getElementById('list').addEventListener('click',function(e){
  e.preventDefault();
  var li=t.closest('.ol-b');if(!li)return;
  var oid=li.getAttribute('data-oid');if(!oid)return;
- li.classList.toggle('collapsed');
- var open=!li.classList.contains('collapsed');
- t.setAttribute('aria-expanded',open?'true':'false');
- var m=loadCollapsed();if(open)delete m[oid];else m[oid]=1;saveCollapsed(m);
+ var folded=!li.classList.contains('collapsed');
+ var m=loadCollapsed();m[oid]=folded?1:0;saveCollapsed(m);
+ if(/-t\d+$/.test(oid)){
+  li.classList.toggle('collapsed',folded);
+  t.setAttribute('aria-expanded',folded?'false':'true');
+ }else if(oid.indexOf('c-')===0)applyFoldDom(oid.slice(2),folded);
+ else{
+  li.classList.toggle('collapsed',folded);
+  t.setAttribute('aria-expanded',folded?'false':'true');
+ }
 });
 
 var SUBTASKS={}; // card_id -> [{id,title,done}]
@@ -1435,7 +1646,6 @@ function stateBtnHtml(rid,st){
 }
 function nextState(st){return st==='open'?'done':(st==='done'?'skip':'open');}
 function applyStateDom(rid,st){
- var nodes=document.querySelectorAll('[data-rid="'+CSS.escape(rid)+'"], #c-'+CSS.escape(rid)+', [data-oid="c-'+CSS.escape(rid)+'"]');
  // update buttons
  document.querySelectorAll('.done-cb[data-rid="'+CSS.escape(rid)+'"]').forEach(function(btn){
   btn.setAttribute('data-state',st);
@@ -1466,9 +1676,13 @@ function loadDone(){
 }
 function setState(rid,state){
  var prev=itemState(rid);
+ var prevFold=isFolded(rid);
  DONE[rid]=state==='open'?undefined:state;
  if(state==='open')delete DONE[rid];
  applyStateDom(rid,state);
+ // Done/skip always folds; open returns to default expanded (clears override).
+ if(state==='done'||state==='skip')setFolded(rid,true);
+ else{var m=loadCollapsed();delete m[foldOid(rid)];saveCollapsed(m);applyFoldDom(rid,false);}
  updateProg();
  fetch('api/done',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},
   body:JSON.stringify({date:today,item_id:rid,state:state})}).then(function(r){
@@ -1477,12 +1691,20 @@ function setState(rid,state){
  }).catch(function(){
   if(prev==='open')delete DONE[rid]; else DONE[rid]=prev;
   applyStateDom(rid,prev);
+  setFolded(rid,prevFold);
   updateProg();
   alert('완료 상태 저장에 실패했습니다. 잠시 후 다시 시도하세요.');
  });
 }
 function cycleState(rid){setState(rid,nextState(itemState(rid)));}
 document.getElementById('list').addEventListener('click',function(e){
+ var fold=e.target.closest('.card-fold');
+ if(fold){
+  e.preventDefault();
+  var frid=fold.getAttribute('data-rid');if(!frid)return;
+  toggleFold(frid);
+  return;
+ }
  var cb=e.target.closest('.done-cb');
  if(cb){
   e.preventDefault();
@@ -1571,15 +1793,40 @@ function calRid(e){
  }
  return 'cal-'+raw;
 }
+// Last successful today-cal payload per KST date. Used when the live API is down (404/network).
+var CAL_KEY='today-cal-cache-v1';
+var CAL_STALE=false;
+function calCacheKey(date){return CAL_KEY+'|'+date;}
+function readCalCache(date){
+ try{
+  var o=JSON.parse(localStorage.getItem(calCacheKey(date))||'null');
+  if(!o||!Array.isArray(o.events))return null;
+  return o;
+ }catch(e){return null;}
+}
+function writeCalCache(date,events){
+ try{localStorage.setItem(calCacheKey(date),JSON.stringify({savedAt:Date.now(),events:events||[]}));}catch(e){}
+}
+function mapCalEvents(events){
+ return (events||[]).map(function(e){var span=e.allDay?'종일':(e.start+'–'+e.end);var o={rid:calRid(e),date:today,start:e.allDay?'종일':e.start,title:e.title,channel:'캘린더 · '+e.calendar,calendar:e.calendar,links:[],pub:'',
+  tasks:[{id:'t',title:e.title+' ('+span+')',min:e.duration||null,steps:[]}],
+  allDay:!!e.allDay,calendarId:e.calendarId||'',eventId:e.eventId||'',instanceId:e.instanceId||e.eventId||'',
+  recurring:!!e.recurring,originalMs:(typeof e.originalMs==='number'?e.originalMs:null),originalDate:e.originalDate||''};
+  if(e.calendar==='Workout'){o.agent='804ba387-766e-4d91-8ffa-367b8b26bff9';}
+  return applyFixedRoutine(o);});
+}
+function applyCalCacheFallback(){
+ var cached=readCalCache(today);
+ if(!cached){CAL=[];CAL_STALE=false;return false;}
+ CAL=mapCalEvents(cached.events);CAL_STALE=true;return true;
+}
 function loadCal(){
  return fetch('api/today-cal?date='+encodeURIComponent(today)+'&_='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
-  if(!j||!j.events){CAL=[];return;}
-  CAL=j.events.map(function(e){var span=e.allDay?'종일':(e.start+'–'+e.end);var o={rid:calRid(e),date:today,start:e.allDay?'종일':e.start,title:e.title,channel:'캘린더 · '+e.calendar,calendar:e.calendar,links:[],pub:'',
-   tasks:[{id:'t',title:e.title+' ('+span+')',min:e.duration||null,steps:[]}],
-   eventId:e.eventId||''};
-   if(e.calendar==='Workout'){o.agent='804ba387-766e-4d91-8ffa-367b8b26bff9';}
-   return applyFixedRoutine(o);});
- }).catch(function(){CAL=[];});
+  if(j&&Array.isArray(j.events)){
+   writeCalCache(today,j.events);CAL_STALE=false;CAL=mapCalEvents(j.events);return;
+  }
+  applyCalCacheFallback();
+ }).catch(function(){applyCalCacheFallback();});
 }
 var refreshing=false;
 function refreshToday(opts){
@@ -1601,6 +1848,13 @@ function refreshToday(opts){
 }
 render();
 refreshToday({silent:true});
+setInterval(placeNowLine,30000);
+window.addEventListener('resize',function(){
+ var scale=document.querySelector('#toc .tt-scale');
+ if(!scale)return;
+ scale.style.minHeight='';
+ placeEvents();
+});
 var refreshBtn=document.getElementById('refresh-btn');
  if(refreshBtn)refreshBtn.addEventListener('click',function(){refreshToday();});
 document.addEventListener('visibilitychange',function(){
@@ -1723,8 +1977,16 @@ def build():
                 "  Cache-Control: public, max-age=300", ""]
     hdr += ["/%s/channels.opml" % sec, "  Content-Type: text/x-opml; charset=utf-8",
             "  Cache-Control: public, max-age=300", ""]
+    # Extensionless /today and /sns are real files (or pretty paths). Without an explicit
+    # Content-Type, Pages serves them as application/octet-stream and browsers download them.
     for _p in ("today", "today.html", "sns", "sns.html"):
-        hdr += ["/%s/%s" % (sec, _p), "  Cache-Control: no-cache", ""]
+        hdr += ["/%s/%s" % (sec, _p), "  Content-Type: text/html; charset=utf-8",
+                "  Cache-Control: no-cache", ""]
+    # Also publish extensionless copies so /today and /sns resolve without relying on rewrites.
+    for _src, _dst in (("today.html", "today"), ("sns.html", "sns")):
+        src = os.path.join(d, _src)
+        if os.path.isfile(src):
+            shutil.copyfile(src, os.path.join(d, _dst))
     hdr += ["/%s/cal/*" % sec, "  Content-Type: text/calendar; charset=utf-8",
             "  Cache-Control: public, max-age=60", ""]
     hdr += ["/%s/*" % sec, "  Referrer-Policy: no-referrer", ""]
@@ -1782,6 +2044,9 @@ def wrangler(args, env, check=True):
 
 def deploy(sec):
     sync_secret_functions()
+    cal_fn = os.path.join(BASE, "functions", sec, "api", "today-cal.js")
+    if not os.path.isfile(cal_fn):
+        sys.exit("ERROR: missing %s — run scripts/sync-secret-functions.sh before deploy" % cal_fn)
     name = project()
     env = dict(os.environ, CLOUDFLARE_ACCOUNT_ID=account_id(), WRANGLER_SEND_METRICS="false")
     rc, out = wrangler(["project", "list", "--json"], env, check=False)
@@ -1795,6 +2060,20 @@ def deploy(sec):
     print("\n".join(l for l in out.splitlines() if "pages.dev" in l or "Success" in l or "Uploaded" in l))
     url = "https://%s.pages.dev/%s/feed.xml" % (name, sec)
     print("UNIFIED FEED URL:", url)
+    # Smoke: today-cal must be reachable or calendar cards (일과 시작 FIXED_ROUTINES) stay empty.
+    smoke = "https://%s.pages.dev/%s/api/today-cal" % (name, sec)
+    try:
+        req = urllib.request.Request(smoke, headers={"User-Agent": "hyunho-feeds-deploy-smoke"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read()
+            if resp.status != 200:
+                sys.exit("ERROR: deploy smoke today-cal HTTP %s" % resp.status)
+            data = json.loads(body.decode("utf-8"))
+            if "events" not in data:
+                sys.exit("ERROR: deploy smoke today-cal missing events key")
+            print("SMOKE OK: today-cal (%d events)" % len(data.get("events") or []))
+    except Exception as e:
+        sys.exit("ERROR: deploy smoke today-cal failed: %s\nURL: %s" % (e, smoke))
     return url
 
 

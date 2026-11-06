@@ -11,11 +11,14 @@ const DAYS = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 function unfold(t) { return t.replace(/\r\n/g, "\n").replace(/\n[ \t]/g, ""); }
 function unesc(s) { return s.replace(/\\n/gi, " ").replace(/\\([,;\\])/g, "$1"); }
 function parseEvents(text) {
-  const out = []; let cur = null, depth = 0;
+  const out = []; let cur = null, depth = 0, relcalid = "";
   for (const line of unfold(text).split("\n")) {
-    if (line === "BEGIN:VEVENT") { cur = { p: {}, exdate: [], att: [] }; continue; }
+    if (line === "BEGIN:VEVENT") { cur = { p: {}, exdate: [], att: [] }; depth = 0; continue; }
     if (line === "END:VEVENT") { if (cur) out.push(cur); cur = null; continue; }
-    if (!cur) continue;
+    if (!cur) {
+      if (line.startsWith("X-WR-RELCALID:")) relcalid = line.slice("X-WR-RELCALID:".length).trim();
+      continue;
+    }
     if (line.startsWith("BEGIN:")) { depth++; continue; }
     if (line.startsWith("END:")) { depth--; continue; }
     if (depth > 0) continue;
@@ -27,7 +30,37 @@ function parseEvents(text) {
     else if (name === "EXDATE") { for (const v of val.split(",")) cur.exdate.push({ v, params }); }
     else cur.p[name] = { v: val, params };
   }
-  return out;
+  return { events: out, relcalid };
+}
+function calendarIdFromUrl(src) {
+  try {
+    const m = new URL(src).pathname.match(/\/calendar\/ical\/([^/]+)\//i);
+    if (m) return decodeURIComponent(m[1]);
+  } catch (e) {}
+  return "";
+}
+function calendarIdFromOrganizers(evs) {
+  const ids = new Set();
+  for (const ev of evs) {
+    const org = (ev.p.ORGANIZER?.v || "").replace(/^mailto:/i, "").trim();
+    const low = org.toLowerCase();
+    if (low.includes("@group.calendar.google.com") || low.includes("@group.v.calendar.google.com")) ids.add(org);
+  }
+  return ids.size === 1 ? [...ids][0] : "";
+}
+function eventIdFromUid(uid) {
+  const s = String(uid || "");
+  const at = s.lastIndexOf("@");
+  return at > 0 ? s.slice(0, at) : s;
+}
+function utcStamp(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, "0");
+  return "" + d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()) + "T" + p(d.getUTCHours()) + p(d.getUTCMinutes()) + p(d.getUTCSeconds()) + "Z";
+}
+function ymdKst(ms) {
+  const p = kstParts(ms);
+  return p.y + "-" + String(p.mo + 1).padStart(2, "0") + "-" + String(p.d).padStart(2, "0");
 }
 // Returns {ms (UTC epoch ms), allDay}
 function parseDT(prop) {
@@ -87,11 +120,54 @@ function occurrences(ev, start, dayS, dayE, durMs) {
   return res;
 }
 
+export function collectIcsEvents(text, date, cal, src) {
+  const dayS = kstDayStart(date), dayE = dayS + DAY;
+  const events = [];
+  const parsed = parseEvents(text);
+  const evs = parsed.events;
+  const calendarId = parsed.relcalid || calendarIdFromUrl(src) || calendarIdFromOrganizers(evs);
+  const overrides = {}; // uid -> set of recurrence-id ms
+  for (const ev of evs) if (ev.p["RECURRENCE-ID"]) { const uid = ev.p.UID?.v; const rid = parseDT(ev.p["RECURRENCE-ID"]); if (uid && rid) (overrides[uid] = overrides[uid] || new Set()).add(rid.ms); }
+  for (const ev of evs) {
+    const st = parseDT(ev.p.DTSTART); if (!st) continue;
+    if ((ev.p.STATUS?.v || "").toUpperCase() === "CANCELLED") continue;
+    let en = parseDT(ev.p.DTEND), durMs;
+    if (en) durMs = en.ms - st.ms;
+    else if (ev.p.DURATION) { const m = ev.p.DURATION.v.match(/P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?/); durMs = m ? (((+(m[1] || 0) * 7 + +(m[2] || 0)) * 24 + +(m[3] || 0)) * 60 + +(m[4] || 0)) * 60000 + +(m[5] || 0) * 1000 : 0; }
+    else durMs = st.allDay ? DAY : 0;
+    { const org = (ev.p.ORGANIZER?.v || "").toLowerCase(); if (HIDE_ORGANIZERS.some(h => org.includes(h)) && !ev.att.some(a => a.v.includes("oksknoh@gmail.com") && a.partstat === "ACCEPTED")) continue; }
+    const uid = ev.p.UID?.v;
+    let list;
+    if (ev.p["RECURRENCE-ID"]) list = (st.ms < dayE && st.ms + Math.max(durMs, 1) > dayS) ? [st.ms] : [];
+    else {
+      list = occurrences(ev, st, dayS, dayE, durMs);
+      const ex = new Set(ev.exdate.map(x => parseDT(x)).filter(Boolean).map(x => x.ms));
+      const ov = overrides[uid] || new Set();
+      list = list.filter(ms => !ex.has(ms) && !ov.has(ms));
+    }
+    const title = unesc(ev.p.SUMMARY?.v || "(제목 없음)");
+    const eventId = eventIdFromUid(uid);
+    const rec = ev.p["RECURRENCE-ID"] ? parseDT(ev.p["RECURRENCE-ID"]) : null;
+    const recurring = !!(ev.p.RRULE || rec);
+    for (const ms of list) {
+      // Timed: only events starting this day. All-day: any occurrence overlapping the day.
+      if (!st.allDay && ms < dayS) continue;
+      const originalMs = rec ? rec.ms : ms;
+      const allDay = !!(st.allDay || (rec && rec.allDay));
+      const originalDate = allDay ? ymdKst(originalMs) : "";
+      const instanceId = !eventId ? "" : (recurring ? eventId + "_" + (allDay ? originalDate.replace(/-/g, "") : utcStamp(originalMs)) : eventId);
+      const row = { id: (uid || title) + "@" + ms, title, calendar: cal, calendarId, eventId, instanceId, recurring, originalMs, originalDate };
+      if (allDay) events.push({ ...row, start: "종일", end: "종일", duration: null, allDay: true });
+      else events.push({ ...row, start: hhmm(ms), end: hhmm(ms + durMs), duration: Math.round(durMs / 60000), allDay: false });
+    }
+  }
+  return events;
+}
+
 export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   let date = url.searchParams.get("date");
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
-  const dayS = kstDayStart(date), dayE = dayS + DAY;
   const events = [], errors = [];
   const base = request.url.replace(/\/api\/today-cal.*$/, "/");
   const sources = [
@@ -104,39 +180,7 @@ export async function onRequestGet({ request, env }) {
     let text;
     try { const r = await fetch(src, { cf: { cacheTtl: 60 } }); if (!r.ok) throw new Error("HTTP " + r.status); text = await r.text(); }
     catch (e) { errors.push(cal + ": fetch failed"); return; }
-    const evs = parseEvents(text);
-    const overrides = {}; // uid -> set of recurrence-id ms
-    for (const ev of evs) if (ev.p["RECURRENCE-ID"]) { const uid = ev.p.UID?.v; const rid = parseDT(ev.p["RECURRENCE-ID"]); if (uid && rid) (overrides[uid] = overrides[uid] || new Set()).add(rid.ms); }
-    for (const ev of evs) {
-      const st = parseDT(ev.p.DTSTART); if (!st) continue;
-      if ((ev.p.STATUS?.v || "").toUpperCase() === "CANCELLED") continue;
-      let en = parseDT(ev.p.DTEND), durMs;
-      if (en) durMs = en.ms - st.ms;
-      else if (ev.p.DURATION) { const m = ev.p.DURATION.v.match(/P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?/); durMs = m ? (((+(m[1] || 0) * 7 + +(m[2] || 0)) * 24 + +(m[3] || 0)) * 60 + +(m[4] || 0)) * 60000 + +(m[5] || 0) * 1000 : 0; }
-      else durMs = st.allDay ? DAY : 0;
-      { const org = (ev.p.ORGANIZER?.v || "").toLowerCase(); if (HIDE_ORGANIZERS.some(h => org.includes(h)) && !ev.att.some(a => a.v.includes("oksknoh@gmail.com") && a.partstat === "ACCEPTED")) continue; }
-      const uid = ev.p.UID?.v;
-      let list;
-      if (ev.p["RECURRENCE-ID"]) list = (st.ms < dayE && st.ms + Math.max(durMs, 1) > dayS) ? [st.ms] : [];
-      else {
-        list = occurrences(ev, st, dayS, dayE, durMs);
-        const ex = new Set(ev.exdate.map(x => parseDT(x)).filter(Boolean).map(x => x.ms));
-        const ov = overrides[uid] || new Set();
-        list = list.filter(ms => !ex.has(ms) && !ov.has(ms));
-      }
-      const title = unesc(ev.p.SUMMARY?.v || "(제목 없음)");
-      // Google Calendar ICS UID is usually "<eventId>@google.com"; expose eventId for FIXED_ROUTINES matching.
-      const eventId = uid && uid.includes("@") ? uid.split("@")[0] : (uid || "");
-      for (const ms of list) {
-        // Timed: only events starting this day. All-day: any occurrence overlapping the day.
-        if (!st.allDay && ms < dayS) continue;
-        if (st.allDay) {
-          events.push({ id: (uid || title) + "@" + ms, title, start: "종일", end: "종일", duration: null, calendar: cal, allDay: true, eventId });
-        } else {
-          events.push({ id: (uid || title) + "@" + ms, title, start: hhmm(ms), end: hhmm(ms + durMs), duration: Math.round(durMs / 60000), calendar: cal, allDay: false, eventId });
-        }
-      }
-    }
+    events.push(...collectIcsEvents(text, date, cal, src));
   }));
   events.sort((a, b) => (b.allDay ? 1 : 0) - (a.allDay ? 1 : 0) || a.start.localeCompare(b.start) || a.title.localeCompare(b.title));
   return new Response(JSON.stringify({ date, events, errors }), {

@@ -125,13 +125,15 @@ export async function onRequestGet({ request, env }) {
         list = list.filter(ms => !ex.has(ms) && !ov.has(ms));
       }
       const title = unesc(ev.p.SUMMARY?.v || "(제목 없음)");
+      // Google Calendar ICS UID is usually "<eventId>@google.com"; expose eventId for FIXED_ROUTINES matching.
+      const eventId = uid && uid.includes("@") ? uid.split("@")[0] : (uid || "");
       for (const ms of list) {
         // Timed: only events starting this day. All-day: any occurrence overlapping the day.
         if (!st.allDay && ms < dayS) continue;
         if (st.allDay) {
-          events.push({ id: (uid || title) + "@" + ms, title, start: "종일", end: "종일", duration: null, calendar: cal, allDay: true });
+          events.push({ id: (uid || title) + "@" + ms, title, start: "종일", end: "종일", duration: null, calendar: cal, allDay: true, eventId });
         } else {
-          events.push({ id: (uid || title) + "@" + ms, title, start: hhmm(ms), end: hhmm(ms + durMs), duration: Math.round(durMs / 60000), calendar: cal, allDay: false });
+          events.push({ id: (uid || title) + "@" + ms, title, start: hhmm(ms), end: hhmm(ms + durMs), duration: Math.round(durMs / 60000), calendar: cal, allDay: false, eventId });
         }
       }
     }

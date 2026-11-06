@@ -1006,6 +1006,12 @@ var FIXED_ROUTINES=[
   {id:'todo-list',title:'투두리스트 확인',min:10},
   {id:'prioritize',title:'오늘 할 일 우선순위 정하기',min:5},
   {id:'meetings',title:'회의 일정 확인',min:3}
+ ]},
+ {eventId:'pti42aolps46jhrkoj9vv1irck',title:'Valley AI 확인',calendar:'Routine',tasks:[
+  {id:'bookmark-market',title:'최신 시황 글거리 북마크',min:5},
+  {id:'bookmark-community',title:'커뮤니티 글 북마크',min:5},
+  {id:'send-to-reader',title:'북마크된 거 리더 앱으로 보내기',min:2},
+  {id:'read-bookmarks',title:'북마크 글거리 읽기',min:18}
  ]}
 ];
 function matchFixedRoutine(r){

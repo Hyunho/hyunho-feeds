@@ -1,5 +1,12 @@
 [
   {
+    "id": "37e77787-1fab-413d-86df-10af199f718d",
+    "title": "일과 시작 (2026-11-06)",
+    "pubDate": "2026-11-06T09:00:00+09:00",
+    "html": "<h1>일과 시작 (09:00, 35분)</h1>\n<p>컴퓨터 켜기 → 티트리 시작 → 텀블러에 커피 → 가사 없는 음악 듣기 → 이메일 확인 → 투두리스트 확인 → 오늘 할 일 우선순위 정하기 → 회의 일정 확인</p>",
+    "md": "---\ntitle: \"일과 시작\"\ndate: \"2026-11-06\"\ntoday_routine:\n  version: 1\n  id: work-start\n  start_time: \"09:00\"\n  calendar_link:\n    provider: \"google\"\n    calendar_id: \"e9cf3c4f7ca348dbb9037211e02fb329e23d5738beab4fde0fbf4ee3216ad26c@group.calendar.google.com\"\n    event_id: \"hepgfaqcark07inovjan8tq6ec\"\n    scope: \"occurrence\"\n    original_start_time:\n      date_time: \"2026-11-06T09:00:00+09:00\"\n  tasks:\n    - id: power-on\n      title: \"컴퓨터 켜기\"\n      duration_minutes: 1\n    - id: start-teatree\n      title: \"티트리 시작\"\n      duration_minutes: 1\n    - id: coffee\n      title: \"텀블러에 커피\"\n      duration_minutes: 4\n    - id: instrumental\n      title: \"가사 없는 음악 듣기\"\n      duration_minutes: 1\n    - id: email\n      title: \"이메일 확인\"\n      duration_minutes: 10\n    - id: todo-list\n      title: \"투두리스트 확인\"\n      duration_minutes: 10\n    - id: prioritize\n      title: \"오늘 할 일 우선순위 정하기\"\n      duration_minutes: 5\n    - id: meetings\n      title: \"회의 일정 확인\"\n      duration_minutes: 3\n---\n\n# 일과 시작 (09:00, 35분)\n\n컴퓨터 켜기 → 티트리 시작 → 텀블러에 커피 → 가사 없는 음악 듣기 → 이메일 확인 → 투두리스트 확인 → 오늘 할 일 우선순위 정하기 → 회의 일정 확인\n"
+  },
+  {
     "id": "b6420745-59ef-4452-aa5f-2e4767b552b9",
     "title": "아침 루틴 (2026-11-03)",
     "pubDate": "2026-11-03T00:09:18+09:00",

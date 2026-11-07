@@ -834,9 +834,21 @@ ul.ol ul{padding-left:1.35rem;border-left:1px solid var(--line);margin-left:.55r
 .st-add button{flex:0 0 auto;font-size:.85rem;padding:.35rem .7rem;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
 .ol-b > .subtasks{margin:.15rem 0 .35rem 1.55rem;border-top:0;padding-top:0}
 @media(max-width:520px){.ol-b > .subtasks{margin-left:1.1rem}}
-#toc{display:none}@media(min-width:1220px){
-#toc{display:flex;flex-direction:column;position:fixed;top:2rem;left:max(1rem,calc(50% - 20rem - 18.25rem));width:17rem;height:calc(100vh - 4rem);max-height:calc(100vh - 4rem);overflow:auto;font-size:.78rem;padding:0 .15rem .2rem 0}
-#toc h3{font-size:.95rem;margin:0 0 .85rem;flex:0 0 auto}
+#toc{display:none}#toc-fold{display:none}@media(min-width:1220px){
+#toc{display:flex;flex-direction:column;position:fixed;top:2rem;left:max(1rem,calc(50% - 20rem - 18.25rem));width:17rem;height:calc(100vh - 4rem);max-height:calc(100vh - 4rem);overflow:hidden;font-size:.78rem;padding:0 .15rem .2rem 0}
+.toc-hd{position:relative;display:flex;align-items:center;flex:0 0 auto;min-height:1.7rem;margin:0 0 .7rem;padding-right:2rem}
+.toc-hd h3{font-size:.95rem;margin:0;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#toc-body{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;padding-top:.7rem}
+#toc-fold{display:flex;align-items:center;justify-content:center;position:absolute;top:0;right:0;width:1.7rem;height:1.7rem;margin:0;padding:0;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);cursor:pointer;line-height:1;-webkit-tap-highlight-color:transparent;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+#toc-fold:hover{background:var(--ol-hover)}
+#toc-fold:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#toc-fold::before{content:"‹";font-size:1.15rem}
+html.toc-collapsed #toc-fold::before{content:"›"}
+/* Keep the toggle on the open panel's right edge, beside the column. */
+html.toc-collapsed #toc{width:1.7rem;height:auto;max-height:none;left:max(16.3rem,calc(50% - 22.95rem));padding:0;overflow:visible;pointer-events:none}
+html.toc-collapsed .toc-hd{margin:0;padding:0;min-height:0}
+html.toc-collapsed .toc-hd h3,html.toc-collapsed #toc-body{display:none}
+html.toc-collapsed #toc-fold{position:static;pointer-events:auto}
 .tt-all{display:flex;flex-direction:column;gap:.05rem;margin:0 0 .8rem;flex:0 0 auto}
 .tt-all a{display:block;padding:.05rem .2rem;border:0;border-radius:4px;text-decoration:none;color:inherit;background:transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
 .tt-all a .t{color:var(--sub);margin-right:.35rem;font-variant-numeric:tabular-nums}
@@ -890,7 +902,9 @@ body.toc-open{overflow:hidden}
 @media (prefers-color-scheme:dark){#toc-sheet-list a.toc-now,#toc a.toc-now{background:rgba(138,180,248,.16)}}
 #toc-sheet-list a.toc-next,#toc a.toc-next{box-shadow:inset 3px 0 0 var(--acc)}
 }
-</style></head><body><nav id="toc"></nav><main>
+</style>
+<script>try{if(localStorage.getItem('today-toc-collapsed')==='1')document.documentElement.classList.add('toc-collapsed');}catch(e){}</script>
+</head><body><nav id="toc" aria-label="루틴 / 일정"><div class="toc-hd"><h3>루틴 / 일정</h3><button type="button" id="toc-fold" aria-expanded="true" aria-controls="toc-body" aria-label="왼쪽 패널 접기"></button></div><div id="toc-body"></div></nav><main>
 <div class="hdr"><h1>오늘 루틴</h1><button type="button" id="refresh-btn" aria-label="새로고침" title="새로고침">↻</button></div><p class="sub" id="today"></p>
 <p class="sub" id="prog"></p>
 <div class="vtog" id="vtog" role="group" aria-label="보기 전환"><button type="button" data-v="card" class="on">카드</button><button type="button" data-v="outline">아웃라인</button></div>
@@ -1363,7 +1377,7 @@ function timetableHtml(a){
   var t=r.start||(o.f?'예정':'종일');
   return '<a href="'+detailHref(r.rid)+'" data-rid="'+esc(r.rid)+'"'+(cls.length?' class="'+cls.join(' ')+'"':'')+calStyleAttr(r)+'><span class="t">'+esc(t)+'</span>'+esc(displayTitle(r))+'</a>';
  }).join('');
- return '<h3>루틴 / 일정</h3>'+(outHtml?'<div class="tt-all">'+outHtml+'</div>':'')
+ return (outHtml?'<div class="tt-all">'+outHtml+'</div>':'')
   +'<div class="tt-scale">'+hoursHtml+'<div class="tt-end"><span class="tt-hl">24</span></div><div class="tt-track">'+evHtml+'<div class="tt-now"><i></i></div></div></div>';
 }
 function placeEvents(){
@@ -1400,19 +1414,36 @@ function placeNowLine(){
  now.style.display='';
  now.style.top=Math.max(0,Math.min(H,((m-TT_START)/(TT_END-TT_START))*H)).toFixed(1)+'px';
 }
+function revealTocNow(){
+ var toc=document.getElementById('toc-body');
+ if(!toc||toc.getAttribute('data-scrolled')==='1')return;
+ var now=toc.querySelector('.tt-now');
+ if(now){
+  var y=0,el=now;
+  while(el&&el!==toc){y+=el.offsetTop;el=el.offsetParent;}
+  toc.scrollTop=Math.max(0,y-toc.clientHeight*0.35);
+ }
+ toc.setAttribute('data-scrolled','1');
+}
+var TOC_FOLD_KEY='today-toc-collapsed';
+function setTocFold(on, persist){
+ document.documentElement.classList.toggle('toc-collapsed', !!on);
+ var btn=document.getElementById('toc-fold');
+ if(btn){
+  btn.setAttribute('aria-expanded', on?'false':'true');
+  btn.setAttribute('aria-label', on?'왼쪽 패널 펼치기':'왼쪽 패널 접기');
+ }
+ if(persist){try{localStorage.setItem(TOC_FOLD_KEY, on?'1':'0');}catch(e){}}
+ if(!on)requestAnimationFrame(function(){placeEvents();revealTocNow();});
+}
 function fillToc(a){
- var toc=document.getElementById('toc');
+ var toc=document.getElementById('toc-body');
+ if(!toc)return;
  var prev=toc.scrollTop,seen=toc.getAttribute('data-scrolled')==='1';
  toc.innerHTML=timetableHtml(a);
  placeEvents();
  if(!seen){
-  var now=toc.querySelector('.tt-now');
-  if(now){
-   var y=0,el=now;
-   while(el&&el!==toc){y+=el.offsetTop;el=el.offsetParent;}
-   toc.scrollTop=Math.max(0,y-toc.clientHeight*0.35);
-  }
-  toc.setAttribute('data-scrolled','1');
+  if(!document.documentElement.classList.contains('toc-collapsed'))revealTocNow();
  }else toc.scrollTop=prev;
  var sheetList=document.getElementById('toc-sheet-list');
  if(sheetList)sheetList.innerHTML=tocLinksHtml(a);
@@ -1434,6 +1465,16 @@ function closeTocSheet(){
  var sheet=document.getElementById('toc-sheet');
  setTimeout(function(){if(!document.body.classList.contains('toc-open')){sheet.hidden=true;document.getElementById('toc-backdrop').hidden=true;}},260);
 }
+(function bindTocFold(){
+ var btn=document.getElementById('toc-fold');
+ if(!btn)return;
+ var on=false;
+ try{on=localStorage.getItem(TOC_FOLD_KEY)==='1';}catch(e){}
+ setTocFold(on, false);
+ btn.addEventListener('click',function(){
+  setTocFold(!document.documentElement.classList.contains('toc-collapsed'), true);
+ });
+})();
 (function bindTocSheet(){
  var fab=document.getElementById('toc-fab'),bd=document.getElementById('toc-backdrop'),sheet=document.getElementById('toc-sheet'),closeBtn=document.getElementById('toc-close');
  if(!fab||!sheet)return;

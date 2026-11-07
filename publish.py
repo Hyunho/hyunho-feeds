@@ -1,30 +1,25 @@
 #!/usr/bin/env python3
-"""Shared RSS hosting on Cloudflare Pages (stdlib only). See README.md (Korean guide for bots).
+"""오늘 루틴 — Cloudflare Pages site for today's routines (stdlib only). See README.md.
+
+RSS/Atom feeds and OPML are not published. Routines live in stored Markdown
+(today_routine frontmatter) and are rendered into /<secret>/today.
 
 Usage (works from any working directory; all paths are relative to this script):
-  # Valley AI (single channel valley.xml + unified feed.xml). Briefings & study posts both go here.
-  python3 publish.py add --channel valley --title "2026-10-03 아침 브리핑" --file briefing.md [--date ISO] [--link URL] [--no-deploy]
-  # (omit --channel or use --channel valley; both write to items.json -> valley.xml)
-  # Bot channels (each bot has its own feed <secret>/<slug>.xml, last 60 items)
-  python3 publish.py channel create --slug deals --name "할인정보" [--description "..."] [--link URL]
+  python3 publish.py add --channel valley --title "2026-10-03 아침" --file routine.md [--date ISO] [--link URL] [--no-deploy]
+  python3 publish.py channel create --slug reading --name "독서" [--description "..."]
   python3 publish.py channel list
   python3 publish.py channel remove --slug deals --yes        # unregister + delete its stored items
-  python3 publish.py add --channel deals --title "..." --file post.md [--date ISO] [--link URL] [--no-deploy]
+  python3 publish.py add --channel reading --title "..." --file post.md [--date ISO] [--link URL] [--no-deploy]
   python3 publish.py deploy | build | resplit [--no-deploy]
   python3 publish.py progress [--date YYYY-MM-DD] [--channel slug]  # D1 done/skip/todo (default: yesterday KST)
 
 Outputs (under public/<secret>/):
-  feed.xml        UNIFIED feed "통합 브리핑": Valley AI items + every bot channel post, date desc, max 100.
-                  Valley items keep their title/guid; bot items get title "[<channel name>] <title>" and the
-                  same guid as in their channel feed. Rebuilt on every add/create/remove/build.
-  valley.xml      Valley AI single channel (briefings + study posts) -- slug "valley"
-  <slug>.xml      bot channel feeds (registered in channels.json, items in items/<slug>.json)
-  channels.opml   every feed for one-shot import (unified + Valley AI + bot channels)
-  index.html      private channel index (only under the secret path; site root index.html stays blank)
+  index.html      private home (today + SNS links, source list). Site root index.html stays blank.
+  today.html      today-routine timeline (also copied to extensionless "today")
+  sns.html        SNS timeline from stored sns-channel posts (also copied to "sns")
 
 Topic split (legacy, storage-only): at `add`/`resplit` time, briefing markdown may still be classified into
-  market/insights/news/community and stored on item["channels"], but those topic XML files are NOT written
-  and are NOT listed in OPML/index. Valley AI is one channel: valley.xml only.
+  market/insights/news/community and stored on item["channels"]. No topic files are written.
   --channel-file CH=path still overrides the stored split for that topic key.
 
 Concurrency: every mutating command (add/resplit/build/deploy/channel create|remove) holds an exclusive
@@ -35,7 +30,6 @@ otherwise read from account_id.txt or discovered via GET /accounts).
 """
 import argparse, contextlib, unicodedata, fcntl, html, json, os, re, shutil, subprocess, sys, tempfile, time, urllib.request, urllib.error, uuid
 from datetime import datetime, timezone, timedelta
-from email.utils import format_datetime
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 ITEMS = os.path.join(BASE, "items.json")
@@ -47,9 +41,6 @@ DOCS_DIR = os.path.join(BASE, "docs")
 LOCK_TIMEOUT = int(os.environ.get("PUBLISH_LOCK_TIMEOUT", "900"))  # seconds
 KST = timezone(timedelta(hours=9))
 MAX_ITEMS = 60
-UNIFIED_MAX = 100
-UNIFIED_TITLE = "통합 브리핑"
-UNIFIED_DESC = "valley.town + 봇 채널 통합 피드"
 WRANGLER = os.environ.get("WRANGLER_PKG", "wrangler@3")  # v3 runs on Node 20; v4 needs Node >= 22
 
 
@@ -73,7 +64,7 @@ def secret():
         if re.fullmatch(r"[0-9a-f]{32}", v):
             return v
         sys.exit("ERROR: secret.txt must be a 32-char lowercase hex path (got %r)" % (v[:12] + "…" if len(v) > 12 else v,))
-    sys.exit("ERROR: secret.txt missing — restore the production feed path secret before build/deploy")
+    sys.exit("ERROR: secret.txt missing — restore the production private-path secret before build/deploy")
 
 
 def project():
@@ -96,22 +87,6 @@ def link_attrs(url):
     if host == "hyunho-feeds.pages.dev" or host.endswith(".hyunho-feeds.pages.dev"):
         return ""
     return ' target="_blank" rel="noopener"'
-
-_A_HREF_RE = re.compile(r'<a\s+([^>]*?)href=("([^"]*)"|\'([^\']*)\')([^>]*)>', re.I)
-
-def rewrite_external_links(html_str):
-    """Ensure external http(s) anchors in stored HTML open in a new tab."""
-    def repl(m):
-        pre, href_tok, dqh, sqh, post = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5)
-        url = dqh if dqh is not None else sqh
-        attrs = (pre or "") + (post or "")
-        if re.search(r"\btarget\s*=", attrs, re.I):
-            return m.group(0)
-        extra = link_attrs(url or "")
-        if not extra:
-            return m.group(0)
-        return "<a %shref=%s%s%s>" % (pre, href_tok, post, extra)
-    return _A_HREF_RE.sub(repl, html_str or "")
 
 def inline(text):
     out, i, n = [], 0, len(text)
@@ -206,7 +181,6 @@ CHANNELS = [  # (key, Korean name, description)
     ("news", "뉴스룸", "valley.town 뉴스룸 기사"),
     ("community", "커뮤니티", "커뮤니티·밸리 톡 글과 공지"),
 ]
-WRITE_TOPIC_FEEDS = False  # Valley AI is one channel; topic XMLs disabled (split may still be stored)
 CHANNEL_NAMES = {k: n for k, n, _ in CHANNELS}
 URL_RULES = [  # checked in order against each URL
     ("/competitions/valley-insights/", "insights"),
@@ -362,19 +336,10 @@ def save_items(items):
 # ---------------- bot channel registry ----------------
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 RESERVED_SLUGS = {"feed", "market", "insights", "news", "community", "channels", "valley", "index"}
-VALLEY = {"name": "Valley AI", "description": "valley.town 브리핑 · 공부 일정", "file": "valley.xml",
+VALLEY = {"name": "Valley AI", "description": "valley.town 브리핑 · 공부 일정",
           "builtin": True, "link": "https://www.valley.town/",
           "agent_id": "31c9ced1-decf-43ca-aee1-a59e15c564a9", "agent_name": "valley ai 학습"}
 AGENT_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-
-
-def agent_footer(meta):
-    """Footer linking to the Grok Bot agent that owns a channel (added at build time)."""
-    aid = (meta or {}).get("agent_id")
-    if not aid:
-        return ""
-    name = meta.get("agent_name") or meta.get("name") or "봇"
-    return '<p><a href="grokbot://app/v1/agent?id=%s">🤖 %s 열기</a></p>' % (html.escape(aid), html.escape(name, quote=False))
 
 
 def validate_agent_id(aid):
@@ -383,7 +348,7 @@ def validate_agent_id(aid):
 
 
 def load_channels():
-    """{slug: meta}. 'valley' is always present as a builtin alias of valley.xml."""
+    """{slug: meta}. 'valley' is always present as a builtin source."""
     data = load_json(CHANNELS_JSON, {})
     data.setdefault("channels", {})
     data["channels"]["valley"] = dict(VALLEY, **{k: v for k, v in data["channels"].get("valley", {}).items()
@@ -422,10 +387,8 @@ def base_url():
     return "https://%s.pages.dev/%s/" % (project(), secret())
 
 
-def feed_url(slug, data=None):
-    data = data or load_channels()
-    m = data["channels"].get(slug) or {}
-    return base_url() + m.get("file", slug + ".xml")
+def today_url():
+    return base_url() + "today"
 
 
 
@@ -676,78 +639,22 @@ def has_frontmatter(md):
 
 
 def body_html(md):
-    """HTML for readers: frontmatter is never rendered into the HTML body."""
+    """HTML for the reading body. Frontmatter is never rendered into the HTML."""
     return md_to_html(split_frontmatter(md)[1])
 
 
-def raw_md_for(it):
-    """Original Markdown to carry in content:encoded (only for frontmatter docs)."""
-    md = it.get("md")
-    return md if has_frontmatter(md) else None
+def embed_json(data):
+    """JSON safe to drop into an HTML script tag."""
+    return json.dumps(data, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
-# ---------------- feed rendering ----------------
-def cdata(s):
-    return "<![CDATA[" + s.replace("]]>", "]]]]><![CDATA[>") + "]]>"
-
-
-def rss_doc(title, description, entries, link="https://www.valley.town/"):
-    """entries: list of dicts with title, guid, pubDate (iso), html, optional link."""
-    esc = html.escape
-    parts = ['<?xml version="1.0" encoding="UTF-8"?>',
-             '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">', "<channel>",
-             "<title>%s</title>" % esc(title, quote=False),
-             "<link>%s</link>" % esc(link, quote=False),
-             "<description>%s</description>" % esc(description, quote=False),
-             "<language>ko</language>",
-             "<lastBuildDate>%s</lastBuildDate>" % format_datetime(datetime.now(KST))]
-    for e in entries:
-        parts.append("<item>")
-        parts.append("<title>%s</title>" % esc(e["title"], quote=False))
-        if e.get("link"):
-            parts.append("<link>%s</link>" % esc(e["link"]))
-        parts.append('<guid isPermaLink="false">%s</guid>' % esc(e["guid"]))
-        parts.append("<pubDate>%s</pubDate>" % format_datetime(datetime.fromisoformat(e["pubDate"])))
-        parts.append("<description>%s</description>" % cdata(e["html"]))
-        if e.get("md"):  # full original Markdown incl. frontmatter (today_routine v1)
-            parts.append("<content:encoded>%s</content:encoded>" % cdata(e["md"]))
-        parts.append("</item>")
-    parts += ["</channel>", "</rss>", ""]
-    return "\n".join(parts)
-
-
-def opml_doc(burl, groups):
-    """groups: list of (group title, [(fname, title, htmlUrl)])."""
-    esc = lambda v: html.escape(v, quote=True)
-    out = ['<?xml version="1.0" encoding="UTF-8"?>', '<opml version="2.0">', "<head>",
-           "<title>Valley AI 피드</title>",
-           "<dateCreated>%s</dateCreated>" % format_datetime(datetime.now(KST)), "</head>", "<body>"]
-    for gtitle, feeds in groups:  # gtitle None -> feeds at top level (no folder)
-        if not feeds:
-            continue
-        if gtitle:
-            out.append('<outline text="%s" title="%s">' % (esc(gtitle), esc(gtitle)))
-        for fname, title, hurl in feeds:
-            out.append('<outline type="rss" text="%s" title="%s" xmlUrl="%s" htmlUrl="%s"/>'
-                       % (esc(title), esc(title), esc(burl + fname), esc(hurl)))
-        if gtitle:
-            out.append("</outline>")
-    out += ["</body>", "</opml>", ""]
-    return "\n".join(out)
-
-
-def private_index(groups):
-    """Landing page under /<secret>/ — channel home for the unified feed."""
+def home_page(sources):
+    """Private home under /<secret>/. sources: [(name, count, slug)]."""
     esc = html.escape
     rows = []
-    for gtitle, feeds in groups:
-        if not feeds:
-            continue
-        rows.append(("<h2>%s</h2>" % esc(gtitle) if gtitle else "") + "<ul>")
-        for fname, title, _ in feeds:
-            rows.append('<li><a href="%s">%s</a> <code>%s</code></li>' % (esc(fname), esc(title), esc(fname)))
-        rows.append("</ul>")
-    body = "".join(rows)
+    for name, count, slug in sources:
+        rows.append("<li>%s <code>%s</code> · %d</li>" % (esc(name), esc(slug), count))
+    body = "<ul>%s</ul>" % "".join(rows) if rows else "<p>등록된 출처가 없습니다.</p>"
     return (
         "<!doctype html>\n"
         '<html lang="ko"><head>\n'
@@ -755,7 +662,7 @@ def private_index(groups):
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         '<meta name="robots" content="noindex, nofollow">\n'
         '<meta name="referrer" content="no-referrer">\n'
-        "<title>Valley Feed · RSS</title>\n"
+        "<title>오늘 루틴</title>\n"
         "<style>\n"
         ":root{color-scheme:light dark}\n"
         "body{font-family:system-ui,-apple-system,sans-serif;max-width:40rem;"
@@ -769,46 +676,20 @@ def private_index(groups):
         "a{color:#0b57d0}\n"
         "@media (prefers-color-scheme:dark){a{color:#8ab4f8} h2{border-bottom-color:#444}}\n"
         "code{font-size:.82em;opacity:.65;margin-left:.35rem}\n"
-        ".opml{margin:1rem 0 .25rem}\n"
+        ".nav{margin:1rem 0 .25rem}\n"
         ".note{opacity:.65;font-size:.88rem;margin-top:1.75rem}\n"
         "</style></head><body>\n"
-        "<h1>Valley Feed</h1>\n"
-        '<p class="sub">통합 브리핑 · 채널별 RSS / Unified &amp; per-channel feeds</p>\n'
-        '<p class="opml"><a href="today">📋 오늘 루틴 타임라인</a></p>\n'
-        '<p class="opml"><a href="sns">📱 SNS 구독 타임라인</a></p>\n'
-        '<p class="opml"><a href="channels.opml">channels.opml</a>'
-        " — 한 번에 구독 / import all</p>\n"
-        '<p class="opml">할 일 Inbox API 문서 / Todo inbox API docs: '
+        "<h1>오늘 루틴</h1>\n"
+        '<p class="sub">오늘의 루틴과 일정. RSS 피드는 발행하지 않습니다.</p>\n'
+        '<p class="nav"><a href="today">오늘 루틴 타임라인</a></p>\n'
+        '<p class="nav"><a href="sns">SNS 구독 타임라인</a></p>\n'
+        '<p class="nav">할 일 Inbox API: '
         '<a href="/api/inbox/docs.md">docs.md</a> · <a href="/api/inbox/openapi.json">openapi.json</a></p>\n'
+        "<h2>출처</h2>\n"
         + body + "\n"
-        '<p class="note">이 주소는 비공개 경로입니다. 공유에 주의하세요.'
-        " / Private path — do not share publicly.</p>\n"
+        '<p class="note">이 주소는 비공개 경로입니다. 공유에 주의하세요.</p>\n'
         "</body></html>\n"
     )
-
-
-
-def item_page(e, d, burl):
-    """Write a standalone HTML page for an item without its own link; return its URL."""
-    esc = html.escape
-    slug = re.sub(r"[^A-Za-z0-9-]", "-", e["guid"])
-    pdir = os.path.join(d, "p")
-    os.makedirs(pdir, exist_ok=True)
-    when = datetime.fromisoformat(e["pubDate"]).astimezone(KST).strftime("%Y-%m-%d %H:%M")
-    page = ("<!doctype html>\n<html lang=\"ko\"><head><meta charset=\"utf-8\">"
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-            "<meta name=\"robots\" content=\"noindex, nofollow\"><meta name=\"referrer\" content=\"no-referrer\">"
-            "<title>%s</title><style>:root{color-scheme:light dark}body{font-family:system-ui,-apple-system,sans-serif;"
-            "max-width:40rem;margin:2rem auto;padding:0 1.25rem;line-height:1.65}h1{font-size:1.35rem}"
-            ".meta{opacity:.65;font-size:.9rem}a{color:#0b57d0}@media (prefers-color-scheme:dark){a{color:#8ab4f8}}"
-            "</style></head><body><h1>%s</h1><p class=\"meta\">%s</p>%s</body></html>\n"
-            % (esc(e["title"]), esc(e["title"]), when, rewrite_external_links(e["html"])))
-    open(os.path.join(pdir, slug + ".html"), "w", encoding="utf-8").write(page)
-    return burl + "p/" + slug + ".html"
-
-
-def with_pages(entries, d, burl):
-    return [e if e.get("link") else dict(e, link=item_page(e, d, burl)) for e in entries]
 
 
 def routine_entries(it, chan_name, agent_id=None):
@@ -1003,7 +884,7 @@ body.toc-open{overflow:hidden}
 <p class="sub" id="prog"></p>
 <div class="vtog" id="vtog" role="group" aria-label="보기 전환"><button type="button" data-v="card" class="on">카드</button><button type="button" data-v="outline">아웃라인</button></div>
 <div id="list"></div><div id="up"></div>
-<p class="sub" style="margin-top:2rem"><a href="./" style="color:var(--acc)">← 피드 목록</a></p>
+<p class="sub" style="margin-top:2rem"><a href="./" style="color:var(--acc)">← 홈</a></p>
 </main>
 <button type="button" id="toc-fab" aria-controls="toc-sheet" aria-expanded="false">목차</button>
 <div id="toc-backdrop" hidden></div>
@@ -1879,8 +1760,7 @@ document.addEventListener('visibilitychange',function(){
 
 
 def today_page(routines):
-    data = json.dumps(routines, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-    return TODAY_HTML.replace("__DATA__", data)
+    return TODAY_HTML.replace("__DATA__", embed_json(routines))
 
 
 
@@ -1891,73 +1771,43 @@ def sync_secret_functions():
         return
     subprocess.run(["bash", script], check=False)
 
+def source_rows(chans):
+    """[(name, stored count capped at MAX_ITEMS, slug)] for the private home."""
+    rows = [(VALLEY["name"], len(by_date(load_items())[:MAX_ITEMS]), "valley")]
+    for slug in sorted(bot_slugs(chans)):
+        m = chans["channels"][slug]
+        rows.append((m["name"], len(by_date(load_chan_items(slug))[:MAX_ITEMS]), slug))
+    return rows
+
+
+def collect_routines(chans):
+    routines = []
+    for it in load_items():
+        routines += routine_entries(it, VALLEY["name"], chans["channels"]["valley"].get("agent_id"))
+    for slug in bot_slugs(chans):
+        m = chans["channels"][slug]
+        for it in load_chan_items(slug):
+            routines += routine_entries(it, m["name"], m.get("agent_id"))
+    return routines
+
+
+def sns_posts():
+    """Posts embedded in the SNS page. No RSS document is written."""
+    return [{"title": it.get("title") or "", "pubDate": it.get("pubDate") or "", "html": it.get("html") or ""}
+            for it in by_date(load_chan_items("sns"))[:MAX_ITEMS]]
+
+
 def build():
     sync_secret_functions()
     sec = secret()
     chans = load_channels()
-    items = by_date(load_items())[:MAX_ITEMS]
-    vfoot = agent_footer(chans["channels"]["valley"])
-    full = [dict(title=it["title"], guid=it["id"], pubDate=it["pubDate"], html=it["html"] + vfoot,
-                 link=it.get("link"), md=raw_md_for(it))
-            for it in items]
-    routines = []
-    for it in load_items():
-        routines += routine_entries(it, VALLEY["name"], chans["channels"]["valley"].get("agent_id"))
-    for _slug in bot_slugs(chans):
-        _m = chans["channels"][_slug]
-        for it in load_chan_items(_slug):
-            routines += routine_entries(it, _m["name"], _m.get("agent_id"))
+    routines = collect_routines(chans)
     stage = os.path.join(BASE, ".public-build")
     if os.path.isdir(stage):
         shutil.rmtree(stage)
     d = os.path.join(stage, sec)
     os.makedirs(d)
-    burl = "https://%s.pages.dev/%s/" % (project(), sec)
-    full = with_pages(full, d, burl)
-    open(os.path.join(d, "valley.xml"), "w", encoding="utf-8").write(
-        rss_doc(VALLEY["name"], VALLEY["description"], full))
-    valley_feeds = [("valley.xml", VALLEY["name"], "https://www.valley.town/")]
-    unified = list(full)
-    counts = {}
-    for ch, name, desc in CHANNELS:
-        entries = []
-        for it in items:
-            cmd = (it.get("channels") or {}).get(ch)
-            if not cmd or not any(BULLET.match(l) for l in cmd.split("\n")):  # skip channel w/o bullets
-                continue
-            entries.append(dict(title="%s · %s" % (it["title"], name), guid="%s#%s" % (it["id"], ch),
-                                pubDate=it["pubDate"], html=md_to_html(cmd) + vfoot, link=it.get("link")))
-        counts[ch] = len(entries)
-        if WRITE_TOPIC_FEEDS:
-            title = "Valley AI · %s" % name
-            open(os.path.join(d, ch + ".xml"), "w", encoding="utf-8").write(rss_doc(title, desc, entries))
-            valley_feeds.append((ch + ".xml", title, "https://www.valley.town/"))
-    burl = "https://%s.pages.dev/%s/" % (project(), sec)
-    bot_feeds = []
-    for slug in sorted(bot_slugs(chans)):
-        m = chans["channels"][slug]
-        citems = by_date(load_chan_items(slug))[:MAX_ITEMS]
-        foot = agent_footer(m)
-        entries = [dict(title=it["title"], guid=it["id"], pubDate=it["pubDate"], html=it["html"] + foot,
-                        link=it.get("link"), md=raw_md_for(it)) for it in citems]
-        entries = with_pages(entries, d, burl)
-        unified += [dict(e, title="[%s] %s" % (m["name"], e["title"])) for e in entries]
-        fname = slug + ".xml"
-        link = m.get("link") or burl + fname
-        open(os.path.join(d, fname), "w", encoding="utf-8").write(
-            rss_doc(m["name"], m.get("description") or m["name"], entries, link=link))
-        counts[slug] = len(entries)
-        bot_feeds.append((fname, m["name"], link))
-    unified = sorted(unified, key=lambda e: datetime.fromisoformat(e["pubDate"]), reverse=True)[:UNIFIED_MAX]
-    # Channel home for Reeder/etc.: private index under /<secret>/ (not valley.town)
-    index_url = burl  # https://...pages.dev/<secret>/
-    open(os.path.join(d, "feed.xml"), "w", encoding="utf-8").write(
-        rss_doc(UNIFIED_TITLE, UNIFIED_DESC, unified, link=index_url))
-    counts["feed(unified)"] = len(unified)
-    unified_feeds = [("feed.xml", UNIFIED_TITLE, index_url)]
-    groups = [(None, unified_feeds), ("Valley AI", valley_feeds), ("봇 채널", bot_feeds)]
-    open(os.path.join(d, "channels.opml"), "w", encoding="utf-8").write(opml_doc(burl, groups))
-    open(os.path.join(d, "index.html"), "w", encoding="utf-8").write(private_index(groups))
+    open(os.path.join(d, "index.html"), "w", encoding="utf-8").write(home_page(source_rows(chans)))
     open(os.path.join(d, "today.html"), "w", encoding="utf-8").write(today_page(routines))
     # Calendar overlays for today-cal (Runna / 가족 / …) — same-origin ICS under /<secret>/cal/
     cal_src = os.path.join(BASE, "cal-overlays")
@@ -1967,32 +1817,27 @@ def build():
         for fn in os.listdir(cal_src):
             if fn.endswith(".ics"):
                 shutil.copyfile(os.path.join(cal_src, fn), os.path.join(cal_dst, fn))
-    # SNS timeline page (client-side, reads sns.xml from same origin -> auto-updates on every add)
-    if os.path.exists(os.path.join(DOCS_DIR, "sns.html")):
-        shutil.copyfile(os.path.join(DOCS_DIR, "sns.html"), os.path.join(d, "sns.html"))
+    sns_src = os.path.join(DOCS_DIR, "sns.html")
+    if os.path.exists(sns_src):
+        page = open(sns_src, encoding="utf-8").read().replace("__SNS_DATA__", embed_json(sns_posts()))
+        open(os.path.join(d, "sns.html"), "w", encoding="utf-8").write(page)
     blank = ('<!doctype html><html><head><meta charset="utf-8">'
              '<meta name="robots" content="noindex, nofollow"><title></title></head><body></body></html>\n')
     open(os.path.join(stage, "index.html"), "w", encoding="utf-8").write(blank)
-    # Cloudflare Pages serves 404.html with HTTP 404 for missing assets (old topic/valley-study URLs).
+    # Cloudflare Pages serves 404.html with HTTP 404 for missing assets (old feed and post URLs).
     open(os.path.join(stage, "404.html"), "w", encoding="utf-8").write(blank)
     open(os.path.join(stage, "robots.txt"), "w").write("User-agent: *\nDisallow: /\n")
-    # public inbox API docs (no token / no feed secret inside) -> /api/inbox/{openapi.json,docs.md,llms.txt}
+    # public inbox API docs (no token / no path secret inside) -> /api/inbox/{openapi.json,docs.md,llms.txt}
     ddir = os.path.join(stage, "api", "inbox")
     os.makedirs(ddir)
     for src, dst in (("openapi.json", "openapi.json"), ("docs.md", "docs.md"), ("docs.md", "llms.txt")):
         shutil.copyfile(os.path.join(DOCS_DIR, src), os.path.join(ddir, dst))
     hdr = ["/*", "  X-Robots-Tag: noindex, nofollow", ""]
-    for fname, _, _ in unified_feeds + valley_feeds + bot_feeds:
-        hdr += ["/%s/%s" % (sec, fname), "  Content-Type: application/rss+xml; charset=utf-8",
-                "  Cache-Control: public, max-age=300", ""]
-    hdr += ["/%s/channels.opml" % sec, "  Content-Type: text/x-opml; charset=utf-8",
-            "  Cache-Control: public, max-age=300", ""]
-    # Extensionless /today and /sns are real files (or pretty paths). Without an explicit
-    # Content-Type, Pages serves them as application/octet-stream and browsers download them.
+    # Extensionless /today and /sns are real files. Without an explicit Content-Type,
+    # Pages serves them as application/octet-stream and browsers download them.
     for _p in ("today", "today.html", "sns", "sns.html"):
         hdr += ["/%s/%s" % (sec, _p), "  Content-Type: text/html; charset=utf-8",
                 "  Cache-Control: no-cache", ""]
-    # Also publish extensionless copies so /today and /sns resolve without relying on rewrites.
     for _src, _dst in (("today.html", "today"), ("sns.html", "sns")):
         src = os.path.join(d, _src)
         if os.path.isfile(src):
@@ -2012,8 +1857,7 @@ def build():
     os.rename(stage, PUBLIC)
     if os.path.isdir(old):
         shutil.rmtree(old)
-    print("Built %d valley items -> public/<secret>/valley.xml; feeds: %s; + channels.opml"
-          % (len(items), ", ".join("%s=%d" % kv for kv in counts.items())))
+    print("Built %d routines -> public/<secret>/today (no RSS)" % len(routines))
     return sec
 
 
@@ -2068,8 +1912,8 @@ def deploy(sec):
             print("Created Pages project", name)
     rc, out = wrangler(["deploy", PUBLIC, "--project-name", name, "--branch", "main", "--commit-dirty=true"], env)
     print("\n".join(l for l in out.splitlines() if "pages.dev" in l or "Success" in l or "Uploaded" in l))
-    url = "https://%s.pages.dev/%s/feed.xml" % (name, sec)
-    print("UNIFIED FEED URL:", url)
+    url = "https://%s.pages.dev/%s/today" % (name, sec)
+    print("TODAY URL:", url)
     # Smoke: today-cal must be reachable or calendar cards (일과 시작 FIXED_ROUTINES) stay empty.
     smoke = "https://%s.pages.dev/%s/api/today-cal" % (name, sec)
     try:
@@ -2109,13 +1953,14 @@ def read_md(path):
     return md
 
 
-def finish(no_deploy, url):
+def finish(no_deploy):
     sec = build()
+    url = today_url()
     if no_deploy:
-        print("FEED URL (after deploy):", url)
+        print("TODAY URL (after deploy):", url)
     else:
         deploy(sec)
-        print("CHANNEL FEED URL:", url)
+        print("TODAY URL:", url)
     return sec
 
 
@@ -2135,7 +1980,7 @@ def cmd_add_valley(args, md):
     with publish_lock():
         items = load_items(); items.append(item); save_items(items)
         print("Added item:", args.title, item["pubDate"])
-        finish(args.no_deploy, feed_url("valley"))
+        finish(args.no_deploy)
 
 
 def cmd_add_channel(args, md):
@@ -2154,7 +1999,7 @@ def cmd_add_channel(args, md):
         items = by_date(load_chan_items(slug) + [item])[:MAX_ITEMS]
         save_json(chan_items_path(slug), items)
         print("Added item to channel %s: %s %s (%d stored)" % (slug, args.title, item["pubDate"], len(items)))
-        finish(args.no_deploy, feed_url(slug, chans))
+        finish(args.no_deploy)
 
 
 ROUTINE_TEMPLATE = """---
@@ -2168,7 +2013,7 @@ today_routine:
 
 # {title}
 
-(읽기용 본문 — 여기에 설명을 쓰세요. 피드 리더에는 이 본문만 보이고, 앱은 위 frontmatter에서 작업을 읽습니다.)
+(읽기용 본문 — 여기에 설명을 쓰세요. 오늘 페이지는 위 frontmatter에서 작업을 읽습니다.)
 """
 
 
@@ -2247,16 +2092,14 @@ def cmd_channel(args):
         for slug in ["valley"] + sorted(bot_slugs(chans)):
             m = chans["channels"][slug]
             n = len(load_items()) if slug == "valley" else len(load_chan_items(slug))
-            rows.append((slug, m["name"], str(min(n, MAX_ITEMS)), feed_url(slug, chans)))
+            rows.append((slug, m["name"], str(min(n, MAX_ITEMS))))
         dw = lambda t: sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in t)
         pad = lambda t, n: t + " " * (n - dw(t))
-        allr = [("SLUG", "NAME", "ITEMS", "FEED URL")] + rows
+        allr = [("SLUG", "NAME", "ITEMS")] + rows
         w = [max(dw(r[i]) for r in allr) for i in range(3)]
         for r in allr:
-            print("  ".join([pad(r[0], w[0]), pad(r[1], w[1]), " " * (w[2] - dw(r[2])) + r[2], r[3]]))
-        print("(통합 피드 feed.xml = valley + 모든 봇 채널: %sfeed.xml)" % base_url())
-        print("(valley = Valley AI 단일 채널 valley.xml; OPML: %schannels.opml)"
-              % base_url())
+            print("  ".join([pad(r[0], w[0]), pad(r[1], w[1]), " " * (w[2] - dw(r[2])) + r[2]]))
+        print("오늘 루틴: %s" % today_url())
         return
     slug = args.slug
     if args.ccmd == "create":
@@ -2281,7 +2124,7 @@ def cmd_channel(args):
             if not os.path.exists(chan_items_path(slug)):
                 save_json(chan_items_path(slug), [])
             print("Created channel %s (%s)" % (slug, meta["name"]))
-            finish(args.no_deploy, feed_url(slug, chans))
+            finish(args.no_deploy)
     elif args.ccmd == "update":
         with publish_lock():
             chans = load_channels()
@@ -2338,7 +2181,7 @@ def inbox_request(method, body=None, query=""):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(inbox_url() + query, data=data, method=method, headers={
         "Authorization": "Bearer " + tok, "Content-Type": "application/json",
-        "Accept": "application/json", "User-Agent": "valley-feed-inbox/1"})
+        "Accept": "application/json", "User-Agent": "today-routine-inbox/1"})
     try:
         r = urllib.request.urlopen(req, timeout=30)
         return r.status, json.load(r)
@@ -2449,7 +2292,7 @@ def cmd_progress(args):
     # Build URL with secret; never print url/secret.
     url = "https://%s.pages.dev/%s/api/done?date=%s" % (project(), secret(), date)
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "valley-feed-progress/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "today-routine-progress/1.0"})
         with urllib.request.urlopen(req, timeout=20) as r:
             payload = json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
@@ -2556,9 +2399,9 @@ def cmd_progress(args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Shared RSS publisher (see README.md)")
+    ap = argparse.ArgumentParser(description="오늘 루틴 (see README.md)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    a = sub.add_parser("add", help="publish an item (valley briefing by default, or --channel <slug>)")
+    a = sub.add_parser("add", help="store a routine or note (valley by default, or --channel <slug>)")
     a.add_argument("--channel", help="bot channel slug (omit for the valley briefing)")
     a.add_argument("--title", required=True)
     a.add_argument("--file", required=True, help="markdown file ('-' for stdin)")
@@ -2567,15 +2410,15 @@ def main():
     a.add_argument("--no-deploy", action="store_true")
     a.add_argument("--channel-file", action="append", default=[], metavar="CHANNEL=PATH",
                    help="valley only: override auto split for a topic (market|insights|news|community); repeatable")
-    c = sub.add_parser("channel", help="manage bot channels")
+    c = sub.add_parser("channel", help="manage routine sources")
     csub = c.add_subparsers(dest="ccmd", required=True)
     cc = csub.add_parser("create")
     cc.add_argument("--slug", required=True)
-    cc.add_argument("--name", required=True, help="display name (feed title)")
+    cc.add_argument("--name", required=True, help="display name on the today page")
     cc.add_argument("--description")
-    cc.add_argument("--link", help="optional website link for the feed's <link>")
-    cc.add_argument("--agent-id", help="your Grok Bot agent id (UUID); adds an 'open bot' link to every item")
-    cc.add_argument("--agent-name", help="bot name for the link text (default: --name)")
+    cc.add_argument("--link", help="optional website for this source")
+    cc.add_argument("--agent-id", help="Grok Bot agent id (UUID) linked from this source on the today page")
+    cc.add_argument("--agent-name", help="bot name for that link (default: --name)")
     cc.add_argument("--no-deploy", action="store_true")
     cu = csub.add_parser("update")
     cu.add_argument("--slug", required=True)
@@ -2659,7 +2502,7 @@ def main():
                 deploy(sec)
     elif args.cmd == "build":
         with publish_lock():
-            build(); print("FEED URL (after deploy):", feed_url("valley"))
+            build(); print("TODAY URL (after deploy):", today_url())
     elif args.cmd == "progress":
         cmd_progress(args)
     else:

@@ -1,6 +1,6 @@
-# 피드 발행자 안내: 작업 frontmatter v1
+# 오늘 루틴 문서: 작업 frontmatter v1
 
-피드 문서에 작업과 세부 작업을 제공하려는 발행자를 위한 포맷 초안입니다. Markdown 작성 형식과 RSS/Atom 전송 규칙을 정의합니다.
+오늘 페이지에 작업과 세부 작업을 올리려는 작성자를 위한 포맷입니다. Markdown 작성 형식만 정의합니다. RSS/Atom으로는 전달하지 않습니다.
 
 ## 문서 구조
 
@@ -12,9 +12,9 @@ UTF-8 Markdown 파일 시작의 `---` 구분자 사이에 YAML 매핑을 작성�
 
 | 필드 | 타입 | 필수 | 규칙 |
 | --- | --- | --- | --- |
-| title | 문자열 | 아니오 | 문서 제목. 없으면 피드 항목 제목 사용 |
-| date | 문자열 | 아니오 | 발행일, YYYY-MM-DD. YAML 날짜 변환을 피하도록 따옴표 사용 |
-| today_routine | 객체 | 아니오 | 없으면 일반 읽기용 피드 |
+| title | 문자열 | 아니오 | 문서 제목. 없으면 등록 시 `--title` |
+| date | 문자열 | 아니오 | 날짜, YYYY-MM-DD. YAML 날짜 변환을 피하도록 따옴표 사용 |
+| today_routine | 객체 | 아니오 | 없으면 오늘 페이지 카드가 되지 않는 일반 문서 |
 | today_routine.version | 정수 | 예 | v1은 1 |
 | today_routine.id | 문자열 | 예 | 같은 구독 안에서 고유한 문서 식별자 |
 | today_routine.start_time | 문자열 | 아니오 | 루틴 시작 시각. 따옴표로 감싼 24시간제 `"HH:mm"` (`"00:00"`~`"23:59"`) |
@@ -114,20 +114,10 @@ today_routine:
 - `occurrence`는 `original_start_time.date_time`과 `.date` 중 정확히 하나가 필요하다. Google 응답의 `originalStartTime.dateTime` 또는 `.date` 값을 사용한다. 일정이 이동되어도 현재 시작 시각으로 바꾸지 않는다.
 - `event`·`series`에서는 `original_start_time`을 허용하지 않는다. `date_time`은 유효한 날짜와 명시적 UTC 오프셋(`Z` 포함)을, `date`는 유효한 날짜를 요구한다.
 - 문서 발행일 `date`나 `start_time`으로 회차를 추측하지 않는다. `original_start_time`은 실행 지시가 아니라 기존 회차의 식별 정보이다.
-- 캘린더에 연결된 일정의 실제 시간·반복은 캘린더를 따른다. 피드의 `start_time`은 연결된 일정의 시각을 변경하지 않는다.
-- 조회 권한 없음, 삭제·취소, 범위 불일치 또는 회차를 유일하게 찾지 못한 경우 연결을 보류한다. 피드 수신만으로 일정 생성·변경·참석자 알림을 수행하지 않는다.
+- 캘린더에 연결된 일정의 실제 시간·반복은 캘린더를 따른다. 문서의 `start_time`은 연결된 일정의 시각을 변경하지 않는다.
+- 조회 권한 없음, 삭제·취소, 범위 불일치 또는 회차를 유일하게 찾지 못한 경우 연결을 보류한다. 이 문서만으로 일정 생성·변경·참석자 알림을 수행하지 않는다.
 - 이 확장은 대상 참조만 정의한다. 인증·권한 확보, Google ID와 EventKit 식별자 간 매핑, 연결 UI는 앱 구현에서 다뤄야 한다. Google `event.id`를 EventKit 일정 ID로 그대로 사용하지 않는다.
 
-RSS/Atom 전송 시 기존 규칙대로 frontmatter를 포함한 Markdown 원문 전체를 보존한다.
+저장할 때 frontmatter를 포함한 Markdown 원문을 그대로 둡니다. 오늘 페이지는 빌드 때 `today_routine`을 읽어 카드를 만듭니다. HTML로 바꾼 본문에 YAML을 섞지 않습니다. 글 id와 `today_routine.id`는 별개입니다.
 
-
-Google 식별자 의미는 [Google Calendar Events API](https://developers.google.com/workspace/calendar/api/v3/reference/events)를 따른다. snake_case 필드명과 `scope`는 이 피드 포맷의 정의이다.
-
-## RSS/Atom 전달 규칙
-
-Markdown 원본에 설정이 있어도 발행기가 frontmatter를 제거하면 앱에서 작업을 찾을 수 없다. 발행기는 앞뒤 구분자를 포함한 원본 Markdown 전체를 본문에 보존해야 한다.
-
-- RSS 2.0: `content:encoded`에 frontmatter를 포함한 Markdown 전체를 넣는다. CDATA를 쓰면 본문의 `]]>`를 적절히 분할한다. XML escape를 쓰면 파싱 후 원문이 복원되어야 한다.
-- Atom: `content type="text/markdown"`에 frontmatter를 포함한 Markdown 전체를 XML escape하여 넣는다.
-- HTML로 변환한 본문에 YAML을 섞거나 description/summary에만 일부 설정을 넣지 않는다.
-- RSS guid / Atom id는 피드 항목 식별자다. today_routine.id는 문서의 실행 설정 식별자이며, 두 식별자의 역할을 구분한다.
+Google 식별자 의미는 [Google Calendar Events API](https://developers.google.com/workspace/calendar/api/v3/reference/events)를 따른다. snake_case 필드명과 `scope`는 이 문서 포맷의 정의이다.

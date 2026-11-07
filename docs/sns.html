@@ -32,6 +32,7 @@ a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
 </style></head><body><div class="wrap">
 <header><h1>SNS 구독 타임라인</h1><div class="sub" id="sub">불러오는 중…</div><div class="chips" id="chips"></div></header>
 <main id="list"></main></div>
+<script id="sns-data" type="application/json">__SNS_DATA__</script>
 <script>
 const COLORS=["#1d9bf0","#f91880","#00ba7c","#7856ff","#ff7a00","#e0245e","#17bf63"];
 const NAMES={ValleyAI_X:"Valley AI",LearnerBR:"이보라",simonw:"Simon Willison",hubermanlab:"Andrew Huberman",MerriamWebster:"Merriam-Webster","bodycontrol_no.1":"바디컨트롤"};
@@ -40,10 +41,10 @@ const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=nu
 function kst(d){const k=new Date(d.getTime()+9*3600e3);const p=n=>String(n).padStart(2,"0");return `${k.getUTCFullYear()}-${p(k.getUTCMonth()+1)}-${p(k.getUTCDate())} ${p(k.getUTCHours())}:${p(k.getUTCMinutes())} KST`}
 function paraText(p){const c=p.cloneNode(true);c.querySelectorAll("br").forEach(b=>b.replaceWith("\n"));return c.textContent}
 function parse(item){
-  const title=item.querySelector("title")?.textContent||"";
-  const raw=item.querySelector("description")?.textContent||"";
+  const title=item.title||"";
+  const raw=item.html||"";
   const doc=new DOMParser().parseFromString(raw,"text/html");
-  let pub=new Date(item.querySelector("pubDate")?.textContent);
+  let pub=new Date(item.pubDate);
   const tm=title.match(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) KST/);
   let when=tm?new Date(`${tm[1]}T${tm[2]}:00+09:00`):pub;
   const ig=raw.match(/https:\/\/www\.instagram\.com\/(?:p|reel)\/[\w-]+\/?/);
@@ -103,14 +104,14 @@ function render(){
     const ft=el("div","ft");if(p.link){const a=el("a",null,p.platform==="Instagram"?"Instagram에서 보기 ↗":"X에서 보기 ↗");a.href=p.link;a.target="_blank";a.rel="noopener noreferrer";ft.append(a)}
     m.append(ft);art.append(avl,m);list.append(art)});
 }
-async function load(){
-  try{const r=await fetch("sns.xml",{cache:"no-cache"});const x=new DOMParser().parseFromString(await r.text(),"application/xml");
-    posts=[...x.querySelectorAll("item")].map(parse).sort((a,b)=>b.when-a.when);
+function load(){
+  try{const SNS=JSON.parse(document.getElementById("sns-data").textContent);
+    posts=SNS.map(parse).sort((a,b)=>b.when-a.when);
     document.getElementById("sub").textContent=`글 ${posts.length}개 · 최신순 · ${kst(new Date())} 기준`;render();
-  }catch(e){document.getElementById("sub").textContent="피드를 불러오지 못했어요: "+e.message}
+  }catch(e){document.getElementById("sub").textContent="타임라인을 그리지 못했어요: "+e.message}
 }
 let prevAll=false;
 function fromHash(){const h=decodeURIComponent(location.hash.replace(/^#@?/,""));prevAll=filter==="all"&&!!h;filter=h||"all";if(posts.length)render();window.scrollTo(0,0)}
 window.addEventListener("hashchange",fromHash);fromHash();prevAll=false;
-load();setInterval(load,5*60e3);document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
+load();setInterval(()=>location.reload(),5*60e3);document.addEventListener("visibilitychange",()=>{if(!document.hidden)location.reload()});
 </script></body></html>

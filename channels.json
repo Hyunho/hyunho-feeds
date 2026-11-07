@@ -3,7 +3,6 @@
     "valley": {
       "name": "Valley AI",
       "description": "valley.town 브리핑 · 공부 일정",
-      "file": "valley.xml",
       "builtin": true,
       "link": "https://www.valley.town/",
       "agent_id": "31c9ced1-decf-43ca-aee1-a59e15c564a9",

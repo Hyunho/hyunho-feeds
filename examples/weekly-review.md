@@ -58,4 +58,4 @@ today_routine:
 
 종일 회차는 `date_time` 대신 `date: "2026-10-21"`을 씁니다. 단일 일정은 해당 일정 ID와 `scope: "event"`를 쓰고 `original_start_time`을 생략합니다. 날짜는 문서 발행일과 별개의 회차 식별 값입니다.
 
-이 예시는 연결 대상 포맷만 정의하며, 오늘 회차에만 세부 작업을 저장하는 앱 기능이나 실제 캘린더 연동을 구현하지 않습니다. 전체 규칙은 [발행자 포맷 문서](../docs/today-routine-frontmatter-v1.md#google-캘린더-기존-일정-연결)를 참고합니다.
+이 예시는 연결 대상 포맷만 정의하며, 오늘 회차에만 세부 작업을 저장하는 앱 기능이나 실제 캘린더 연동을 구현하지 않습니다. 전체 규칙은 [작업 frontmatter 문서](../docs/today-routine-frontmatter-v1.md#google-캘린더-기존-일정-연결)를 참고합니다.

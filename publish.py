@@ -704,7 +704,7 @@ def routine_entries(it, chan_name, agent_id=None):
     links = [{"t": t, "u": u} for t, u in re.findall(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", body)]
     day = fm.get("date") or datetime.fromisoformat(it["pubDate"]).astimezone(KST).strftime("%Y-%m-%d")
     return [{"rid": r["id"], "date": day, "start": r.get("start_time"), "cal": r.get("calendar_link"), "pub": it["pubDate"], "title": fm.get("title") or it["title"],
-             "channel": chan_name, "agent": agent_id, "links": links,
+             "channel": chan_name, "agent": agent_id, "links": links, "body": it.get("html") or "",
              "tasks": [{"id": t["id"], "title": t["title"], "min": t.get("duration_minutes"),
                         "steps": [{"id": x["id"], "title": x["title"]} for x in (t.get("steps") or [])]}
                        for t in r["tasks"]]}]
@@ -772,6 +772,17 @@ main{max-width:40rem;margin:0 auto}h1{font-size:1.5rem;margin:.2rem 0}.sub{color
 .card-title-row{display:flex;align-items:center;gap:.45rem;margin:.15rem 0 .2rem}
 .card-time{flex:0 0 auto;color:var(--sub);font-variant-numeric:tabular-nums;font-size:.95rem;min-width:2.7rem}
 .card-title{font-size:1.15rem;font-weight:600;margin:0;line-height:1.3;flex:1 1 auto}
+a.open-detail{color:inherit;text-decoration:none;cursor:pointer}
+a.open-detail:hover{color:var(--acc)}
+a.open-detail .go{color:var(--sub);font-weight:400;margin-left:.35rem}
+.detail-back{display:inline-block;margin:0 0 .85rem;color:var(--acc);text-decoration:none;font-size:.95rem}
+.detail-back:hover{text-decoration:underline}
+body.detail-mode #vtog{display:none}
+.card.detail .body{margin:.15rem 0 .75rem;padding-top:.55rem;border-top:1px dashed var(--line);font-size:.95rem}
+.card.detail .body h1,.card.detail .body h2,.card.detail .body h3{font-size:1.02rem;margin:.75rem 0 .3rem}
+.card.detail .body p{margin:.35rem 0}
+.card.detail .body a{color:var(--acc)}
+.card.detail .body ul{margin:.3rem 0 .55rem;padding-left:1.15rem}
 .ch{font-size:.8rem;color:var(--sub)}.ch a{color:var(--acc);text-decoration:none}
 h2{font-size:1.15rem;margin:.15rem 0 .2rem}.meta{font-size:.85rem;color:var(--sub);margin-bottom:.6rem}
 .tag{display:inline-block;font-size:.75rem;padding:.05rem .45rem;border-radius:999px;border:1px solid var(--line);margin-left:.3rem}
@@ -1047,10 +1058,17 @@ function extLinkHtml(r){
 function fmtMin(m){var h=Math.floor(m/60),x=m%60;return h?(h+'시간'+(x?' '+x+'분':'')):(x+'분');}
 function clock(base,m){if(base==null)return '';var t=(base+m)%1440;return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');}
 function link(r,t){var tl=t.title.toLowerCase();for(var i=0;i<r.links.length;i++){var l=r.links[i].t.toLowerCase();if(l.indexOf(tl)>=0||tl.indexOf(l)>=0)return r.links[i].u;}return null;}
-function card(r,future){
+function detailHref(rid){return '#/r/'+encodeURIComponent(rid);}
+function readDetail(){
+ var h=location.hash||'';
+ var m=/^#\/r\/([^?#]*)$/.exec(h);
+ if(!m||!m[1])return null;
+ try{return decodeURIComponent(m[1]);}catch(e){return null;}
+}
+function card(r,future,detail){
  var sv=startOf(r),own=!!userStart(r.rid),base=null;if(sv){var p=sv.split(':');base=(+p[0])*60+(+p[1]);}
  var st=itemState(r.rid),isDone=st==='done',isSkip=st==='skip';
- var folded=isFolded(r.rid);
+ var folded=detail?false:isFolded(r.rid);
  var tasks=r.tasks||[];
  // Calendar stub: one synthetic task that only echoes the card title (+ time range).
  var stub=tasks.length===1 && !tasks[0].steps.length && (function(){
@@ -1058,8 +1076,9 @@ function card(r,future){
   return !tt || tt===ti || tt.indexOf(ti+' (')===0 || tt.indexOf(ti+'(')===0;
  })();
  enrichExt(r);
- var h='<div class="card'+(isDone?' done':'')+(isSkip?' skip':'')+(folded?' collapsed':'')+calClass(r)+'" id="c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+calStyleAttr(r)+'><div class="ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</div>';
- h+='<div class="card-title-row">'+foldBtnHtml(r.rid,folded)+stateBtnHtml(r.rid,st)+'<span class="card-time">'+esc(sv||'--:--')+'</span><h2 class="card-title">'+esc(displayTitle(r))+'</h2></div>';
+ var h='<div class="card'+(detail?' detail':'')+(isDone?' done':'')+(isSkip?' skip':'')+(folded?' collapsed':'')+calClass(r)+'" id="c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+calStyleAttr(r)+'><div class="ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</div>';
+ var titleInner=detail?esc(displayTitle(r)):'<a class="open-detail" href="'+detailHref(r.rid)+'">'+esc(displayTitle(r))+'<span class="go" aria-hidden="true">›</span></a>';
+ h+='<div class="card-title-row">'+(detail?'':foldBtnHtml(r.rid,folded))+stateBtnHtml(r.rid,st)+'<span class="card-time">'+esc(sv||'--:--')+'</span><h2 class="card-title">'+titleInner+'</h2></div>';
  // Meta only when not "today" (page header already says today) or when tagged.
  if(r.date!==today||future||r.date<today||r.fixedRoutine){
   h+='<div class="meta">'+label(r.date)+(future?' 예정':' 루틴')+(r.date<today?'<span class="tag">이전 날짜</span>':'')+(future?'<span class="tag">예정</span>':'')+(r.fixedRoutine?'<span class="tag">고정 세부 루틴</span>':'')+'</div>';
@@ -1097,6 +1116,7 @@ function card(r,future){
   h+='</ol>';
   if(tasks.length){h+='<div class="tot">총 '+fmtMin(cum)+(unk?' + 미지정':'')+(base!=null?' · ~'+clock(base,cum)+' 종료':'')+'</div>';}
  }
+ if(detail&&r.body)h+='<div class="body">'+r.body+'</div>';
  h+=subtasksHtml(r.rid);
  h+='</div>';
  return h;
@@ -1134,6 +1154,7 @@ function setFolded(rid,folded){
  var m=loadCollapsed();
  m[foldOid(rid)]=folded?1:0;
  saveCollapsed(m);
+ if(readDetail())return;
  applyFoldDom(rid,folded);
 }
 function toggleFold(rid){setFolded(rid,!isFolded(rid));}
@@ -1158,8 +1179,8 @@ function outlineBlock(r,future){
    +(hasSteps?'<ul class="ol-kids">'+steps+'</ul>':'')+'</li>';
  });
  var tags=(r.date<today?'<span class="tag">이전 날짜</span>':'')+(future?'<span class="tag">예정</span>':'');
- return '<li class="ol-b'+(isCol?' collapsed':'')+(st==='done'?' done':'')+(st==='skip'?' skip':'')+calClass(r)+'" id="'+esc(cid)+'" data-oid="'+esc(cid)+'"'+calStyleAttr(r)+'><div class="ol-row"><button type="button" class="ol-tog'+(hasKids?'':' leaf')+'" aria-expanded="'+(hasKids&&!isCol?'true':'false')+'">▼</button>'+stateBtnHtml(r.rid,st)+'<span class="ol-dot"></span>'
-  +'<span class="ol-time">'+esc(sv||'--:--')+'</span><span class="ol-title">'+esc(displayTitle(r))+tags+'</span><span class="ol-ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</span></div>'
+ return '<li class="ol-b'+(isCol?' collapsed':'')+(st==='done'?' done':'')+(st==='skip'?' skip':'')+calClass(r)+'" id="'+esc(cid)+'" data-oid="'+esc(cid)+'" data-rid="'+esc(r.rid)+'"'+calStyleAttr(r)+'><div class="ol-row"><button type="button" class="ol-tog'+(hasKids?'':' leaf')+'" aria-expanded="'+(hasKids&&!isCol?'true':'false')+'">▼</button>'+stateBtnHtml(r.rid,st)+'<span class="ol-dot"></span>'
+  +'<span class="ol-time">'+esc(sv||'--:--')+'</span><span class="ol-title"><a class="open-detail" href="'+detailHref(r.rid)+'">'+esc(displayTitle(r))+'<span class="go" aria-hidden="true">›</span></a>'+tags+'</span><span class="ol-ch">'+esc(r.channel)+(r.agent?' · <a href="grokbot://app/v1/agent?id='+encodeURIComponent(r.agent)+'">'+esc(botLabel(r))+'</a>':'')+extLinkHtml(r)+'</span></div>'
   +(hasKids?'<ul class="ol-kids">'+kids+'</ul>':'')+subtasksHtml(r.rid)+'</li>';
 }
 function outline(items){
@@ -1236,16 +1257,42 @@ function collect(){
  a.sort(function(x,y){return byTime(x.r,y.r)||String(x.r.date||'').localeCompare(String(y.r.date||''));});
  return a;
 }
+var listScroll=0,shownDetail=null,calReady=false;
+function backLink(){return '<a class="detail-back" href="#/">← 오늘 목록</a>';}
 function render(){
  var a=collect(),v=getView(),list=document.getElementById('list');
+ var rid=readDetail(),hit=null,i;
+ if(rid){for(i=0;i<a.length;i++){if(a[i].r.rid===rid){hit=a[i];break;}}}
+ var entering=!!rid&&shownDetail!==rid;
+ var leaving=!rid&&!!shownDetail;
+ if(entering&&!shownDetail)listScroll=window.scrollY;
+ document.body.classList.toggle('detail-mode',!!rid);
  updateToggle(v);
- list.classList.toggle('ol-mode',v==='outline');
- if(v==='outline'){list.innerHTML=outline(a);}
- else{list.innerHTML=a.length?a.map(function(o){return card(o.r,o.f);}).join(''):'<div class="empty">오늘 루틴이 없습니다.</div>';}
+ var h1=document.querySelector('.hdr h1');
+ if(rid){
+  list.classList.remove('ol-mode');
+  document.title=hit?(displayTitle(hit.r)+' · 오늘 루틴'):'오늘 루틴';
+  if(h1)h1.textContent=hit?displayTitle(hit.r):'오늘 루틴';
+  if(hit)list.innerHTML=backLink()+card(hit.r,hit.f,true);
+  else list.innerHTML=backLink()+'<div class="empty">'+(String(rid).indexOf('cal-')===0&&!calReady?'일정을 불러오는 중입니다.':'이 루틴을 오늘 목록에서 찾지 못했습니다.')+'</div>';
+ }else{
+  document.title='오늘 루틴';
+  if(h1)h1.textContent='오늘 루틴';
+  list.classList.toggle('ol-mode',v==='outline');
+  if(v==='outline')list.innerHTML=outline(a);
+  else list.innerHTML=a.length?a.map(function(o){return card(o.r,o.f);}).join(''):'<div class="empty">오늘 루틴이 없습니다.</div>';
+ }
  document.getElementById('up').innerHTML='';
  markExternalLinks(list);
  fillToc(a);
  updateProg(a);
+ shownDetail=rid;
+ if(entering){
+  window.scrollTo(0,0);
+  var back=list.querySelector('.detail-back');
+  if(back)back.focus();
+ }
+ if(leaving)window.scrollTo(0,listScroll);
 }
 function kstNowHM(){
  var f=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
@@ -1271,7 +1318,7 @@ function tocLinksHtml(a){
   if(hl.cur&&r.rid===hl.cur)cls.push('toc-now');
   else if(hl.nxt&&r.rid===hl.nxt)cls.push('toc-next');
   if(calColorOf(r))cls.push('cal-ev');
-  return '<a href="#c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+(cls.length?' class="'+cls.join(' ')+'"':'')+calStyleAttr(r)+'><span class="t">'+esc(r.start||'--:--')+'</span><span>'+esc(displayTitle(r))+'</span></a>';
+  return '<a href="'+detailHref(r.rid)+'" data-rid="'+esc(r.rid)+'"'+(cls.length?' class="'+cls.join(' ')+'"':'')+calStyleAttr(r)+'><span class="t">'+esc(r.start||'--:--')+'</span><span>'+esc(displayTitle(r))+'</span></a>';
  }).join('');
 }
 var TT_START=5*60, TT_END=24*60;
@@ -1308,13 +1355,13 @@ function timetableHtml(a){
   if(b.o.f)cls.push('tt-future');
   var title=displayTitle(r)+(b.o.f?' (예정)':'');
   var col=calColorOf(r);
-  return '<a class="'+cls.join(' ')+'" href="#c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'" data-vs="'+b.vs+'"'
+  return '<a class="'+cls.join(' ')+'" href="'+detailHref(r.rid)+'" data-rid="'+esc(r.rid)+'" data-vs="'+b.vs+'"'
    +(col?' style="--cal:'+col+'"':'')+' title="'+esc(minToHM(b.vs)+' '+title)+'">'+esc(displayTitle(r))+'</a>';
  }).join('');
  var outHtml=outside.map(function(o){
   var r=o.r,cls=tocClassList(r,hl);
   var t=r.start||(o.f?'예정':'종일');
-  return '<a href="#c-'+esc(r.rid)+'" data-rid="'+esc(r.rid)+'"'+(cls.length?' class="'+cls.join(' ')+'"':'')+calStyleAttr(r)+'><span class="t">'+esc(t)+'</span>'+esc(displayTitle(r))+'</a>';
+  return '<a href="'+detailHref(r.rid)+'" data-rid="'+esc(r.rid)+'"'+(cls.length?' class="'+cls.join(' ')+'"':'')+calStyleAttr(r)+'><span class="t">'+esc(t)+'</span>'+esc(displayTitle(r))+'</a>';
  }).join('');
  return '<h3>루틴 / 일정</h3>'+(outHtml?'<div class="tt-all">'+outHtml+'</div>':'')
   +'<div class="tt-scale">'+hoursHtml+'<div class="tt-end"><span class="tt-hl">24</span></div><div class="tt-track">'+evHtml+'<div class="tt-now"><i></i></div></div></div>';
@@ -1394,11 +1441,8 @@ function closeTocSheet(){
  bd.addEventListener('click',closeTocSheet);
  closeBtn.addEventListener('click',closeTocSheet);
  document.getElementById('toc-sheet-list').addEventListener('click',function(e){
-  var a=e.target.closest('a[href^="#c-"]');if(!a)return;
-  e.preventDefault();
-  var id=a.getAttribute('href').slice(1),el=document.getElementById(id);
+  var a=e.target.closest('a[href^="#/r/"]');if(!a)return;
   closeTocSheet();
-  if(el)setTimeout(function(){el.scrollIntoView({behavior:'smooth',block:'start'});},50);
  });
  // swipe down to close
  var startY=null,dragging=false;
@@ -1717,7 +1761,7 @@ function loadCal(){
    writeCalCache(today,j.events);CAL_STALE=false;CAL=mapCalEvents(j.events);return;
   }
   applyCalCacheFallback();
- }).catch(function(){applyCalCacheFallback();});
+ }).catch(function(){applyCalCacheFallback();}).then(function(){calReady=true;});
 }
 var refreshing=false;
 function refreshToday(opts){
@@ -1737,6 +1781,10 @@ function refreshToday(opts){
   if(btn)btn.classList.remove('busy');
  });
 }
+window.addEventListener('hashchange',function(){
+ if(readDetail())closeTocSheet();
+ render();
+});
 render();
 refreshToday({silent:true});
 setInterval(placeNowLine,30000);

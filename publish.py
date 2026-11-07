@@ -1985,6 +1985,98 @@ def wrangler(args, env, check=True):
     return r.returncode, out
 
 
+def production_secret_paths(env, name):
+    """Hex private-path prefixes present in the latest production deployment files."""
+    tok = env.get("CLOUDFLARE_API_TOKEN") or ""
+    headers = {"Authorization": "Bearer " + tok}
+    list_url = ("https://api.cloudflare.com/client/v4/accounts/%s/pages/projects/%s/deployments?env=production&per_page=1"
+                % (account_id(), name))
+    try:
+        with urllib.request.urlopen(urllib.request.Request(list_url, headers=headers), timeout=30) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print("WARN: could not list production deployments (%s); skipping secret-path guard" % e)
+        return set()
+    if not payload.get("success"):
+        print("WARN: deployments list unsuccessful; skipping secret-path guard")
+        return set()
+    rows = payload.get("result") or []
+    if not rows:
+        return set()
+    # List endpoint omits `files`; fetch deployment detail.
+    detail_url = ("https://api.cloudflare.com/client/v4/accounts/%s/pages/projects/%s/deployments/%s"
+                  % (account_id(), name, rows[0]["id"]))
+    try:
+        with urllib.request.urlopen(urllib.request.Request(detail_url, headers=headers), timeout=30) as resp:
+            detail = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print("WARN: could not fetch deployment detail (%s); skipping secret-path guard" % e)
+        return set()
+    if not detail.get("success"):
+        print("WARN: deployment detail unsuccessful; skipping secret-path guard")
+        return set()
+    files = (detail.get("result") or {}).get("files") or {}
+    found = set()
+    for path in files:
+        m = re.match(r"^/([0-9a-f]{32})/", path)
+        if m:
+            found.add(m.group(1))
+    return found
+
+
+def assert_secret_path_stable(sec, env, name):
+    """Refuse deploys that would move /<secret>/ away from the live path (orphans bookmarks + APIs)."""
+    if os.environ.get("FORCE_SECRET_CHANGE", "").strip() in ("1", "true", "yes"):
+        print("FORCE_SECRET_CHANGE set — allowing secret-path change")
+        return
+    live = production_secret_paths(env, name)
+    if not live:
+        return
+    if sec in live and len(live) == 1:
+        return
+    if sec in live:
+        # Live deploy already has our path (plus maybe extras); OK.
+        return
+    others = ", ".join(sorted(p[:4] + "…" + p[-4:] for p in live))
+    sys.exit(
+        "ERROR: secret.txt path is not on the current production deploy (live has %s). "
+        "Deploying a different private path orphans the bookmarked /<secret>/today page and "
+        "breaks api/done (완료 상태 저장 실패). Restore the live secret into secret.txt, "
+        "or set FORCE_SECRET_CHANGE=1 only when intentionally rotating." % others
+    )
+
+
+def smoke_secret_apis(name, sec):
+    """Hit today-cal + done after deploy; both must work or completion toggles fail in the app."""
+    ua = {"User-Agent": "hyunho-feeds-deploy-smoke"}
+    cal_url = "https://%s.pages.dev/%s/api/today-cal" % (name, sec)
+    try:
+        req = urllib.request.Request(cal_url, headers=ua)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read()
+            if resp.status != 200:
+                sys.exit("ERROR: deploy smoke today-cal HTTP %s" % resp.status)
+            data = json.loads(body.decode("utf-8"))
+            if "events" not in data:
+                sys.exit("ERROR: deploy smoke today-cal missing events key")
+            print("SMOKE OK: today-cal (%d events)" % len(data.get("events") or []))
+    except Exception as e:
+        sys.exit("ERROR: deploy smoke today-cal failed: %s\nURL: %s" % (e, cal_url))
+    done_url = "https://%s.pages.dev/%s/api/done?date=%s" % (name, sec, datetime.now(KST).strftime("%Y-%m-%d"))
+    try:
+        req = urllib.request.Request(done_url, headers=ua)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read()
+            if resp.status != 200:
+                sys.exit("ERROR: deploy smoke done HTTP %s" % resp.status)
+            data = json.loads(body.decode("utf-8"))
+            if not isinstance(data.get("done"), list) or not isinstance(data.get("skip"), list):
+                sys.exit("ERROR: deploy smoke done missing done/skip arrays")
+            print("SMOKE OK: done (done=%d skip=%d)" % (len(data["done"]), len(data["skip"])))
+    except Exception as e:
+        sys.exit("ERROR: deploy smoke done failed: %s\nURL: %s" % (e, done_url))
+
+
 def deploy(sec):
     sync_secret_functions()
     cal_fn = os.path.join(BASE, "functions", sec, "api", "today-cal.js")
@@ -1999,24 +2091,12 @@ def deploy(sec):
             print(out2); sys.exit("ERROR: project create failed")
         if rc2 == 0:
             print("Created Pages project", name)
+    assert_secret_path_stable(sec, env, name)
     rc, out = wrangler(["deploy", PUBLIC, "--project-name", name, "--branch", "main", "--commit-dirty=true"], env)
     print("\n".join(l for l in out.splitlines() if "pages.dev" in l or "Success" in l or "Uploaded" in l))
     url = "https://%s.pages.dev/%s/today" % (name, sec)
     print("TODAY URL:", url)
-    # Smoke: today-cal must be reachable or calendar cards (일과 시작 FIXED_ROUTINES) stay empty.
-    smoke = "https://%s.pages.dev/%s/api/today-cal" % (name, sec)
-    try:
-        req = urllib.request.Request(smoke, headers={"User-Agent": "hyunho-feeds-deploy-smoke"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            body = resp.read()
-            if resp.status != 200:
-                sys.exit("ERROR: deploy smoke today-cal HTTP %s" % resp.status)
-            data = json.loads(body.decode("utf-8"))
-            if "events" not in data:
-                sys.exit("ERROR: deploy smoke today-cal missing events key")
-            print("SMOKE OK: today-cal (%d events)" % len(data.get("events") or []))
-    except Exception as e:
-        sys.exit("ERROR: deploy smoke today-cal failed: %s\nURL: %s" % (e, smoke))
+    smoke_secret_apis(name, sec)
     return url
 
 

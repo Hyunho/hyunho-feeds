@@ -1,4 +1,4 @@
-# Cloudflare Pages project config for hyunho-feeds.
+# 오늘 루틴. Pages project name stays hyunho-feeds so hyunho-feeds.pages.dev does not move.
 # Static output is built into public/ by publish.py; functions/ is adjacent.
 name = "hyunho-feeds"
 compatibility_date = "2024-09-23"

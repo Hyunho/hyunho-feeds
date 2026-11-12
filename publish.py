@@ -1021,6 +1021,22 @@ function feedDupOfCal(feed, calEv){
  var hay=(feed.channel+' '+feed.title).toLowerCase().replace(/\s+/g,'');
  return hay.indexOf(w)>=0;
 }
+// Learning bots own some Routine slots (영어/독서/Forge/…). If any past feed matches
+// that start+title word, don't show a synthetic 1-task calendar placeholder — it flips
+// into the bot checklist when 세부 작업 is published and looks like the routine "changed".
+function isBotManagedSlot(calEv){
+ if(!calEv||calEv.fixedRoutine||calEv.calendar!=='Routine')return false;
+ var w=(calEv.title.split(/[:(（]/)[0].trim().split(/\s+/)[0]||'').toLowerCase();
+ var st=calEv.start||'';
+ if(w.length<2||!st)return false;
+ for(var i=0;i<D.length;i++){
+  var r=D[i];
+  if((r.start||'')!==st)continue;
+  var hay=(r.channel+' '+r.title).toLowerCase().replace(/\s+/g,'');
+  if(hay.indexOf(w)>=0)return true;
+ }
+ return false;
+}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 // Banksalad: custom scheme best guess (unverified); App Store id1195804784 verified.
 var BANKSALAD_STORE='https://apps.apple.com/kr/app/id1195804784';
@@ -1141,12 +1157,15 @@ function card(r,future,detail){
   if(o.date)ot=o.date+' (종일)';else if(o.date_time){var d=new Date(o.date_time);ot=isNaN(d)?o.date_time:new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit'}).format(d)+' KST';}
   h+='<div class="tm cal" title="'+esc(c.calendar_id+' / '+c.event_id)+'">📅 Google 캘린더 연결 · '+(SC[c.scope]||esc(c.scope))+(ot?' · '+esc(ot):'')+(r.calAttached?' · 오늘 일정':'')+'</div>';}
  else if(r.fixedRoutine){h+='<div class="tm cal">고정 세부 루틴 · 캘린더 일정</div>';}
+ else if(r.calBare){h+='<div class="tm cal">캘린더 일정</div>';}
  if(CAL_STALE&&r.channel&&String(r.channel).indexOf('캘린더')===0){
   h+='<div class="meta"><span class="tag">캘린더 캐시</span></div>';
  }
  // No separate "시작 HH:MM" — already in card-time.
  var cum=0,unk=false;
- if(stub){
+ if(r.calBare){
+  if(r.duration||(tasks[0]&&tasks[0].min)){var bm=(r.duration||tasks[0].min);h+='<div class="tm">'+(base!=null?esc(sv)+'–'+clock(base,bm)+' · ':'')+fmtMin(bm)+'</div>';}
+ }else if(stub){
   var t0=tasks[0];
   if(t0.min){cum=t0.min;h+='<div class="tm">'+(base!=null?esc(sv)+'–'+clock(base,cum)+' · ':'')+fmtMin(cum)+'</div>';}
   else if(!sv){h+='<div class="tm">시작 시간 없음</div>';}
@@ -1311,6 +1330,10 @@ function collect(){
    }
    return;
   }
+  // Bot-managed Routine slots: wait for today's feed instead of a fake checklist card.
+  if(isBotManagedSlot(r))return;
+  // Non-fixed calendar leftovers (식사·알림 등): keep the time block, no synthetic task.
+  if(!r.fixedRoutine&&r.calendar==='Routine'){r.tasks=[];r.calBare=true;}
   a.push({r:r,f:false});
  });
  a.sort(function(x,y){return byTime(x.r,y.r)||String(x.r.date||'').localeCompare(String(y.r.date||''));});
@@ -1831,6 +1854,7 @@ function writeCalCache(date,events){
 function mapCalEvents(events){
  return (events||[]).map(function(e){var span=e.allDay?'종일':(e.start+'–'+e.end);var o={rid:calRid(e),date:today,start:e.allDay?'종일':e.start,title:e.title,channel:'캘린더 · '+e.calendar,calendar:e.calendar,links:[],pub:'',
   tasks:[{id:'t',title:e.title+' ('+span+')',min:e.duration||null,steps:[]}],
+  duration:e.duration||null,
   allDay:!!e.allDay,calendarId:e.calendarId||'',eventId:e.eventId||'',instanceId:e.instanceId||e.eventId||'',
   recurring:!!e.recurring,originalMs:(typeof e.originalMs==='number'?e.originalMs:null),originalDate:e.originalDate||''};
   if(e.calendar==='Workout'){o.agent='804ba387-766e-4d91-8ffa-367b8b26bff9';}

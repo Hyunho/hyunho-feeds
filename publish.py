@@ -998,6 +998,29 @@ function applyFixedRoutine(r){
  r.fixedRoutine=true;
  return r;
 }
+// Stamp FIXED_ROUTINES onto a feed card so bot-published steps cannot replace the checklist.
+function stampFixedOntoFeed(feed, calEv){
+ if(!feed||!calEv||!calEv.fixedRoutine)return false;
+ var f=matchFixedRoutine(calEv);
+ if(!f)return false;
+ feed.tasks=f.tasks.map(function(t){
+  return {id:t.id,title:t.title,min:t.min||null,steps:(t.steps||[]).map(function(s){return {id:s.id,title:s.title};})};
+ });
+ feed.fixedRoutine=true;
+ feed.calendar=calEv.calendar||feed.calendar;
+ if(calEv.start)feed.calStart=calEv.start;
+ feed.calAttached=true;
+ return true;
+}
+function feedDupOfCal(feed, calEv){
+ if(!feed||!calEv)return false;
+ var w=(calEv.title.split(/[:(（]/)[0].trim().split(/\s+/)[0]||'').toLowerCase();
+ var st=calEv.start||'';
+ if(w.length<2||!st)return false;
+ if((feed.start||'')!==st)return false;
+ var hay=(feed.channel+' '+feed.title).toLowerCase().replace(/\s+/g,'');
+ return hay.indexOf(w)>=0;
+}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 // Banksalad: custom scheme best guess (unverified); App Store id1195804784 verified.
 var BANKSALAD_STORE='https://apps.apple.com/kr/app/id1195804784';
@@ -1267,22 +1290,27 @@ function collect(){
   attached[p.ev.rid]=p.feed;
   p.feed.calAttached=true;
   if(p.ev.start)p.feed.calStart=p.ev.start;
+  // calendar_link attach: keep bot channel, but fixed checklist wins over feed steps.
+  stampFixedOntoFeed(p.feed,p.ev);
  });
  CAL.forEach(function(r){
   if(attached[r.rid])return;
   if(byEv[r.rid]){a.push({r:r,f:false});return;}
   // Unlinked events still collapse into a routine only when the start time matches
   // and the title's first word is already in that routine. Other times stay visible.
-  var w=(r.title.split(/[:(（]/)[0].trim().split(/\s+/)[0]||'').toLowerCase();
-  var st=r.start||'';
-  var dup=w.length>=2&&!!st&&a.some(function(o){
-   if(o.f)return false;
-   var ost=o.r.start||'';
-   if(!ost||ost!==st)return false;
-   var hay=(o.r.channel+' '+o.r.title).toLowerCase().replace(/\s+/g,'');
-   return hay.indexOf(w)>=0;
+  var dups=[];
+  a.forEach(function(o){
+   if(o.f)return;
+   if(feedDupOfCal(o.r,r))dups.push(o);
   });
-  if(dup)return;
+  if(dups.length){
+   // Bot feed for the same slot must not hide/replace a FIXED_ROUTINES checklist.
+   if(r.fixedRoutine){
+    dups.forEach(function(o){stampFixedOntoFeed(o.r,r);});
+    return;
+   }
+   return;
+  }
   a.push({r:r,f:false});
  });
  a.sort(function(x,y){return byTime(x.r,y.r)||String(x.r.date||'').localeCompare(String(y.r.date||''));});

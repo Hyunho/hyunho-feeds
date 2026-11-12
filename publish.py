@@ -945,6 +945,21 @@ function userStart(rid){return '';}
 function startOf(r){return userStart(r.rid)||r.calStart||r.start||'';}
 // Fixed detailed routines for calendar cards (no feed required). Matched by Google event id, then title.
 var FIXED_ROUTINES=[
+ {eventId:'k9m89q1rpa24ufjqmk19s1ga4k',title:'아침 루틴',calendar:'Routine',tasks:[
+  {id:'brush-teeth',title:'양치질',min:3},
+  {id:'drink-water',title:'물 마시기',min:1},
+  {id:'make-bed',title:'잠자리 정리',min:1},
+  {id:'toilet',title:'화장실',min:3},
+  {id:'shower',title:'샤워',min:10},
+  {id:'stretch',title:'일어나서 스트레칭',min:15,steps:[{id:'ground-lv1',title:'그라운드 소통 Lv.1'}]},
+  {id:'tidy-house',title:'간단 집정리',min:10,steps:[
+   {id:'trash-bin',title:'쓰레기통 정리'},
+   {id:'food-waste',title:'음식물 버리기'},
+   {id:'shake-carpet',title:'카펫 털기'}
+  ]},
+  {id:'get-dressed',title:'옷 갈아입기',min:5},
+  {id:'check-schedule',title:'오늘 일정 확인',min:10}
+ ]},
  {eventId:'hepgfaqcark07inovjan8tq6ec',title:'일과 시작',calendar:'Routine',tasks:[
   {id:'power-on',title:'컴퓨터 켜기',min:1},
   {id:'start-teatree',title:'티트리 시작',min:1},
@@ -977,7 +992,9 @@ function matchFixedRoutine(r){
 function applyFixedRoutine(r){
  var f=matchFixedRoutine(r);
  if(!f)return r;
- r.tasks=f.tasks.map(function(t){return {id:t.id,title:t.title,min:t.min||null,steps:[]};});
+ r.tasks=f.tasks.map(function(t){
+  return {id:t.id,title:t.title,min:t.min||null,steps:(t.steps||[]).map(function(s){return {id:s.id,title:s.title};})};
+ });
  r.fixedRoutine=true;
  return r;
 }

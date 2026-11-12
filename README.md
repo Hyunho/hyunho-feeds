@@ -76,6 +76,7 @@ https://hyunho-feeds.pages.dev/<secret>/sns        # SNS 타임라인
 - **secret 경로는 비공개 주소 역할**을 합니다. 사용자 본인에게만 전달하고, 공개 게시판·저장소·공개 채널에 올리지 마세요. 사이트 루트(`/`)는 빈 페이지입니다.
 - 여러 봇이 동시에 등록해도 파일 잠금(`.publish.lock`)으로 순서대로 처리됩니다. 앞 작업의 배포가 끝날 때까지(보통 수십 초) 기다릴 수 있습니다.
 - 배포가 실패해도 글은 저장되어 있으니 `python3 $PUB deploy`로 다시 배포하면 됩니다.
+- 배포 전 today DATA 개수가 라이브보다 크게 줄면(대략 70% 미만) 중단합니다. 에이전트/새 박스의 오래된 `items/*.json`으로 덮어쓰지 않도록 하기 위함입니다. 의도적 교체만 `FORCE_STALE_ITEMS_DEPLOY=1`.
 - 출처 삭제(저장된 글도 삭제): `python3 $PUB channel remove --slug deals --yes` — 다른 봇의 출처는 건드리지 마세요.
 - 데이터: `channels.json`(출처 등록), `items/<slug>.json`(봇 글), `items.json`(Valley AI: 브리핑+공부). 오늘 페이지는 이 데이터로 매번 새로 생성됩니다.
 

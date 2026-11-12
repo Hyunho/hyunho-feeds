@@ -2091,6 +2091,51 @@ def assert_secret_path_stable(sec, env, name):
     )
 
 
+def live_today_routine_count(name, sec):
+    """Count routines embedded in the live today page DATA blob (0 if unreachable)."""
+    url = "https://%s.pages.dev/%s/today" % (name, sec)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "hyunho-feeds-deploy-guard"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception as e:
+        print("WARN: could not fetch live today for routine-count guard (%s)" % e)
+        return None
+    m = re.search(r'<script id="data" type="application/json">(.*?)</script>', html, re.S)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))
+    except Exception:
+        return None
+    return len(data) if isinstance(data, list) else None
+
+
+def assert_routine_count_not_shrinking(routines, name, sec):
+    """Refuse deploys that would drop most bot-published today_routine cards.
+
+    Cloud/agent checkouts often have stale items/*.json; deploying those orphans
+    calendar-linked fixed routines behind incomplete feed data and wipes the
+    bookmarked today page content until recovered.
+    """
+    if os.environ.get("FORCE_STALE_ITEMS_DEPLOY", "").strip() in ("1", "true", "yes"):
+        print("FORCE_STALE_ITEMS_DEPLOY set — allowing smaller today DATA")
+        return
+    live_n = live_today_routine_count(name, sec)
+    if live_n is None:
+        return
+    new_n = len(routines or [])
+    # Allow small churn; block large regressions typical of a stale items checkout.
+    if live_n >= 20 and new_n < int(live_n * 0.7):
+        sys.exit(
+            "ERROR: today DATA would shrink from %d to %d routines (stale items/*.json?). "
+            "Restore items from the live deploy/XML or the shared box before deploy, "
+            "or set FORCE_STALE_ITEMS_DEPLOY=1 only when intentionally replacing feeds."
+            % (live_n, new_n)
+        )
+    print("Routine-count guard OK: live=%d build=%d" % (live_n, new_n))
+
+
 def smoke_secret_apis(name, sec):
     """Hit today-cal + done after deploy; both must work or completion toggles fail in the app."""
     ua = {"User-Agent": "hyunho-feeds-deploy-smoke"}
@@ -2137,6 +2182,21 @@ def deploy(sec):
         if rc2 == 0:
             print("Created Pages project", name)
     assert_secret_path_stable(sec, env, name)
+    # today.html is already built into PUBLIC; recount from the generated page.
+    today_html = os.path.join(PUBLIC, sec, "today.html")
+    built = []
+    if os.path.isfile(today_html):
+        m = re.search(
+            r'<script id="data" type="application/json">(.*?)</script>',
+            open(today_html, encoding="utf-8").read(),
+            re.S,
+        )
+        if m:
+            try:
+                built = json.loads(m.group(1))
+            except Exception:
+                built = []
+    assert_routine_count_not_shrinking(built, name, sec)
     rc, out = wrangler(["deploy", PUBLIC, "--project-name", name, "--branch", "main", "--commit-dirty=true"], env)
     print("\n".join(l for l in out.splitlines() if "pages.dev" in l or "Success" in l or "Uploaded" in l))
     url = "https://%s.pages.dev/%s/today" % (name, sec)

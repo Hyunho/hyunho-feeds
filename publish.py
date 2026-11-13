@@ -945,6 +945,21 @@ function userStart(rid){return '';}
 function startOf(r){return userStart(r.rid)||r.calStart||r.start||'';}
 // Fixed detailed routines for calendar cards (no feed required). Matched by Google event id, then title.
 var FIXED_ROUTINES=[
+ {eventId:'k9m89q1rpa24ufjqmk19s1ga4k',title:'아침 루틴',calendar:'Routine',tasks:[
+  {id:'brush-teeth',title:'양치질',min:3},
+  {id:'drink-water',title:'물 마시기',min:1},
+  {id:'make-bed',title:'잠자리 정리',min:1},
+  {id:'toilet',title:'화장실',min:3},
+  {id:'shower',title:'샤워',min:10},
+  {id:'stretch',title:'일어나서 스트레칭',min:15,steps:[{id:'ground-lv1',title:'그라운드 소통 Lv.1'}]},
+  {id:'tidy-house',title:'간단 집정리',min:10,steps:[
+   {id:'trash-bin',title:'쓰레기통 정리'},
+   {id:'food-waste',title:'음식물 버리기'},
+   {id:'shake-carpet',title:'카펫 털기'}
+  ]},
+  {id:'get-dressed',title:'옷 갈아입기',min:5},
+  {id:'check-schedule',title:'오늘 일정 확인',min:10}
+ ]},
  {eventId:'hepgfaqcark07inovjan8tq6ec',title:'일과 시작',calendar:'Routine',tasks:[
   {id:'power-on',title:'컴퓨터 켜기',min:1},
   {id:'start-teatree',title:'티트리 시작',min:1},
@@ -977,9 +992,50 @@ function matchFixedRoutine(r){
 function applyFixedRoutine(r){
  var f=matchFixedRoutine(r);
  if(!f)return r;
- r.tasks=f.tasks.map(function(t){return {id:t.id,title:t.title,min:t.min||null,steps:[]};});
+ r.tasks=f.tasks.map(function(t){
+  return {id:t.id,title:t.title,min:t.min||null,steps:(t.steps||[]).map(function(s){return {id:s.id,title:s.title};})};
+ });
  r.fixedRoutine=true;
  return r;
+}
+// Stamp FIXED_ROUTINES onto a feed card so bot-published steps cannot replace the checklist.
+function stampFixedOntoFeed(feed, calEv){
+ if(!feed||!calEv||!calEv.fixedRoutine)return false;
+ var f=matchFixedRoutine(calEv);
+ if(!f)return false;
+ feed.tasks=f.tasks.map(function(t){
+  return {id:t.id,title:t.title,min:t.min||null,steps:(t.steps||[]).map(function(s){return {id:s.id,title:s.title};})};
+ });
+ feed.fixedRoutine=true;
+ feed.calendar=calEv.calendar||feed.calendar;
+ if(calEv.start)feed.calStart=calEv.start;
+ feed.calAttached=true;
+ return true;
+}
+function feedDupOfCal(feed, calEv){
+ if(!feed||!calEv)return false;
+ var w=(calEv.title.split(/[:(（]/)[0].trim().split(/\s+/)[0]||'').toLowerCase();
+ var st=calEv.start||'';
+ if(w.length<2||!st)return false;
+ if((feed.start||'')!==st)return false;
+ var hay=(feed.channel+' '+feed.title).toLowerCase().replace(/\s+/g,'');
+ return hay.indexOf(w)>=0;
+}
+// Learning bots own some Routine slots (영어/독서/Forge/…). If any past feed matches
+// that start+title word, don't show a synthetic 1-task calendar placeholder — it flips
+// into the bot checklist when 세부 작업 is published and looks like the routine "changed".
+function isBotManagedSlot(calEv){
+ if(!calEv||calEv.fixedRoutine||calEv.calendar!=='Routine')return false;
+ var w=(calEv.title.split(/[:(（]/)[0].trim().split(/\s+/)[0]||'').toLowerCase();
+ var st=calEv.start||'';
+ if(w.length<2||!st)return false;
+ for(var i=0;i<D.length;i++){
+  var r=D[i];
+  if((r.start||'')!==st)continue;
+  var hay=(r.channel+' '+r.title).toLowerCase().replace(/\s+/g,'');
+  if(hay.indexOf(w)>=0)return true;
+ }
+ return false;
 }
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 // Banksalad: custom scheme best guess (unverified); App Store id1195804784 verified.
@@ -1101,12 +1157,15 @@ function card(r,future,detail){
   if(o.date)ot=o.date+' (종일)';else if(o.date_time){var d=new Date(o.date_time);ot=isNaN(d)?o.date_time:new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit'}).format(d)+' KST';}
   h+='<div class="tm cal" title="'+esc(c.calendar_id+' / '+c.event_id)+'">📅 Google 캘린더 연결 · '+(SC[c.scope]||esc(c.scope))+(ot?' · '+esc(ot):'')+(r.calAttached?' · 오늘 일정':'')+'</div>';}
  else if(r.fixedRoutine){h+='<div class="tm cal">고정 세부 루틴 · 캘린더 일정</div>';}
+ else if(r.calBare){h+='<div class="tm cal">캘린더 일정</div>';}
  if(CAL_STALE&&r.channel&&String(r.channel).indexOf('캘린더')===0){
   h+='<div class="meta"><span class="tag">캘린더 캐시</span></div>';
  }
  // No separate "시작 HH:MM" — already in card-time.
  var cum=0,unk=false;
- if(stub){
+ if(r.calBare){
+  if(r.duration||(tasks[0]&&tasks[0].min)){var bm=(r.duration||tasks[0].min);h+='<div class="tm">'+(base!=null?esc(sv)+'–'+clock(base,bm)+' · ':'')+fmtMin(bm)+'</div>';}
+ }else if(stub){
   var t0=tasks[0];
   if(t0.min){cum=t0.min;h+='<div class="tm">'+(base!=null?esc(sv)+'–'+clock(base,cum)+' · ':'')+fmtMin(cum)+'</div>';}
   else if(!sv){h+='<div class="tm">시작 시간 없음</div>';}
@@ -1250,22 +1309,31 @@ function collect(){
   attached[p.ev.rid]=p.feed;
   p.feed.calAttached=true;
   if(p.ev.start)p.feed.calStart=p.ev.start;
+  // calendar_link attach: keep bot channel, but fixed checklist wins over feed steps.
+  stampFixedOntoFeed(p.feed,p.ev);
  });
  CAL.forEach(function(r){
   if(attached[r.rid])return;
   if(byEv[r.rid]){a.push({r:r,f:false});return;}
   // Unlinked events still collapse into a routine only when the start time matches
   // and the title's first word is already in that routine. Other times stay visible.
-  var w=(r.title.split(/[:(（]/)[0].trim().split(/\s+/)[0]||'').toLowerCase();
-  var st=r.start||'';
-  var dup=w.length>=2&&!!st&&a.some(function(o){
-   if(o.f)return false;
-   var ost=o.r.start||'';
-   if(!ost||ost!==st)return false;
-   var hay=(o.r.channel+' '+o.r.title).toLowerCase().replace(/\s+/g,'');
-   return hay.indexOf(w)>=0;
+  var dups=[];
+  a.forEach(function(o){
+   if(o.f)return;
+   if(feedDupOfCal(o.r,r))dups.push(o);
   });
-  if(dup)return;
+  if(dups.length){
+   // Bot feed for the same slot must not hide/replace a FIXED_ROUTINES checklist.
+   if(r.fixedRoutine){
+    dups.forEach(function(o){stampFixedOntoFeed(o.r,r);});
+    return;
+   }
+   return;
+  }
+  // Bot-managed Routine slots: wait for today's feed instead of a fake checklist card.
+  if(isBotManagedSlot(r))return;
+  // Non-fixed calendar leftovers (식사·알림 등): keep the time block, no synthetic task.
+  if(!r.fixedRoutine&&r.calendar==='Routine'){r.tasks=[];r.calBare=true;}
   a.push({r:r,f:false});
  });
  a.sort(function(x,y){return byTime(x.r,y.r)||String(x.r.date||'').localeCompare(String(y.r.date||''));});
@@ -1786,6 +1854,7 @@ function writeCalCache(date,events){
 function mapCalEvents(events){
  return (events||[]).map(function(e){var span=e.allDay?'종일':(e.start+'–'+e.end);var o={rid:calRid(e),date:today,start:e.allDay?'종일':e.start,title:e.title,channel:'캘린더 · '+e.calendar,calendar:e.calendar,links:[],pub:'',
   tasks:[{id:'t',title:e.title+' ('+span+')',min:e.duration||null,steps:[]}],
+  duration:e.duration||null,
   allDay:!!e.allDay,calendarId:e.calendarId||'',eventId:e.eventId||'',instanceId:e.instanceId||e.eventId||'',
   recurring:!!e.recurring,originalMs:(typeof e.originalMs==='number'?e.originalMs:null),originalDate:e.originalDate||''};
   if(e.calendar==='Workout'){o.agent='804ba387-766e-4d91-8ffa-367b8b26bff9';}
@@ -2046,6 +2115,51 @@ def assert_secret_path_stable(sec, env, name):
     )
 
 
+def live_today_routine_count(name, sec):
+    """Count routines embedded in the live today page DATA blob (0 if unreachable)."""
+    url = "https://%s.pages.dev/%s/today" % (name, sec)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "hyunho-feeds-deploy-guard"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception as e:
+        print("WARN: could not fetch live today for routine-count guard (%s)" % e)
+        return None
+    m = re.search(r'<script id="data" type="application/json">(.*?)</script>', html, re.S)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))
+    except Exception:
+        return None
+    return len(data) if isinstance(data, list) else None
+
+
+def assert_routine_count_not_shrinking(routines, name, sec):
+    """Refuse deploys that would drop most bot-published today_routine cards.
+
+    Cloud/agent checkouts often have stale items/*.json; deploying those orphans
+    calendar-linked fixed routines behind incomplete feed data and wipes the
+    bookmarked today page content until recovered.
+    """
+    if os.environ.get("FORCE_STALE_ITEMS_DEPLOY", "").strip() in ("1", "true", "yes"):
+        print("FORCE_STALE_ITEMS_DEPLOY set — allowing smaller today DATA")
+        return
+    live_n = live_today_routine_count(name, sec)
+    if live_n is None:
+        return
+    new_n = len(routines or [])
+    # Allow small churn; block large regressions typical of a stale items checkout.
+    if live_n >= 20 and new_n < int(live_n * 0.7):
+        sys.exit(
+            "ERROR: today DATA would shrink from %d to %d routines (stale items/*.json?). "
+            "Restore items from the live deploy/XML or the shared box before deploy, "
+            "or set FORCE_STALE_ITEMS_DEPLOY=1 only when intentionally replacing feeds."
+            % (live_n, new_n)
+        )
+    print("Routine-count guard OK: live=%d build=%d" % (live_n, new_n))
+
+
 def smoke_secret_apis(name, sec):
     """Hit today-cal + done after deploy; both must work or completion toggles fail in the app."""
     ua = {"User-Agent": "hyunho-feeds-deploy-smoke"}
@@ -2092,6 +2206,21 @@ def deploy(sec):
         if rc2 == 0:
             print("Created Pages project", name)
     assert_secret_path_stable(sec, env, name)
+    # today.html is already built into PUBLIC; recount from the generated page.
+    today_html = os.path.join(PUBLIC, sec, "today.html")
+    built = []
+    if os.path.isfile(today_html):
+        m = re.search(
+            r'<script id="data" type="application/json">(.*?)</script>',
+            open(today_html, encoding="utf-8").read(),
+            re.S,
+        )
+        if m:
+            try:
+                built = json.loads(m.group(1))
+            except Exception:
+                built = []
+    assert_routine_count_not_shrinking(built, name, sec)
     rc, out = wrangler(["deploy", PUBLIC, "--project-name", name, "--branch", "main", "--commit-dirty=true"], env)
     print("\n".join(l for l in out.splitlines() if "pages.dev" in l or "Success" in l or "Uploaded" in l))
     url = "https://%s.pages.dev/%s/today" % (name, sec)

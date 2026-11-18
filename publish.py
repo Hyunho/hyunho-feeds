@@ -836,7 +836,11 @@ ul.ol ul{padding-left:1.35rem;border-left:1px solid var(--line);margin-left:.55r
 .ol-b > .subtasks{margin:.15rem 0 .35rem 1.55rem;border-top:0;padding-top:0}
 @media(max-width:520px){.ol-b > .subtasks{margin-left:1.1rem}}
 #toc{display:none}#toc-fold{display:none}@media(min-width:1220px){
-#toc{display:flex;flex-direction:column;position:fixed;top:2rem;left:max(1rem,calc(50% - 20rem - 18.25rem));width:17rem;height:calc(100vh - 4rem);max-height:calc(100vh - 4rem);overflow:hidden;font-size:.78rem;padding:0 .15rem .2rem 0}
+/* Open left panel (17rem) + 1.25rem gap = 18.25rem left of main.
+   Shift the (panel + main) cluster by half that (9.125rem) so the right
+   gutter matches the left instead of leaving a large empty strip. */
+#toc{display:flex;flex-direction:column;position:fixed;top:2rem;left:max(1rem,calc(50% - 29.125rem));width:17rem;height:calc(100vh - 4rem);max-height:calc(100vh - 4rem);overflow:hidden;font-size:.78rem;padding:0 .15rem .2rem 0}
+main{margin-left:max(19.5rem,calc(50% - 10.875rem));margin-right:auto}
 .toc-hd{position:relative;display:flex;align-items:center;flex:0 0 auto;min-height:1.7rem;margin:0 0 .7rem;padding-right:2rem}
 .toc-hd h3{font-size:.95rem;margin:0;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #toc-body{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;padding-top:.7rem}
@@ -847,6 +851,7 @@ ul.ol ul{padding-left:1.35rem;border-left:1px solid var(--line);margin-left:.55r
 html.toc-collapsed #toc-fold::before{content:"›"}
 /* Keep the toggle on the open panel's right edge, beside the column. */
 html.toc-collapsed #toc{width:1.7rem;height:auto;max-height:none;left:max(16.3rem,calc(50% - 22.95rem));padding:0;overflow:visible;pointer-events:none}
+html.toc-collapsed main{margin-left:auto;margin-right:auto}
 html.toc-collapsed .toc-hd{margin:0;padding:0;min-height:0}
 html.toc-collapsed .toc-hd h3,html.toc-collapsed #toc-body{display:none}
 html.toc-collapsed #toc-fold{position:static;pointer-events:auto}

@@ -976,7 +976,10 @@ var FIXED_ROUTINES=[
   {id:'prioritize',title:'오늘 할 일 우선순위 정하기',min:5},
   {id:'meetings',title:'회의 일정 확인',min:3}
  ]},
- {eventId:'pti42aolps46jhrkoj9vv1irck',title:'Valley AI 확인',calendar:'Routine',tasks:[
+ {eventId:'pti42aolps46jhrkoj9vv1irck',title:'Valley AI 확인',calendar:'Routine',
+  agent:'31c9ced1-decf-43ca-aee1-a59e15c564a9',
+  extLabel:'valley.town',extStore:'https://www.valley.town/',
+  tasks:[
   {id:'bookmark-market',title:'최신 시황 글거리 북마크',min:5},
   {id:'bookmark-community',title:'커뮤니티 글 북마크',min:5},
   {id:'send-to-reader',title:'북마크된 거 리더 앱으로 보내기',min:2},
@@ -995,6 +998,16 @@ function matchFixedRoutine(r){
  }
  return null;
 }
+function applyFixedMeta(r,f){
+ if(!r||!f)return r;
+ if(f.agent&&!r.agent)r.agent=f.agent;
+ if(f.extLabel&&!r.extLabel){
+  r.extLabel=f.extLabel;
+  if(f.extStore)r.extStore=f.extStore;
+  if(f.extScheme)r.extScheme=f.extScheme;
+ }
+ return r;
+}
 function applyFixedRoutine(r){
  var f=matchFixedRoutine(r);
  if(!f)return r;
@@ -1002,6 +1015,7 @@ function applyFixedRoutine(r){
   return {id:t.id,title:t.title,min:t.min||null,steps:(t.steps||[]).map(function(s){return {id:s.id,title:s.title};})};
  });
  r.fixedRoutine=true;
+ applyFixedMeta(r,f);
  return r;
 }
 // Stamp FIXED_ROUTINES onto a feed card so bot-published steps cannot replace the checklist.
@@ -1016,6 +1030,7 @@ function stampFixedOntoFeed(feed, calEv){
  feed.calendar=calEv.calendar||feed.calendar;
  if(calEv.start)feed.calStart=calEv.start;
  feed.calAttached=true;
+ applyFixedMeta(feed,f);
  return true;
 }
 function feedDupOfCal(feed, calEv){

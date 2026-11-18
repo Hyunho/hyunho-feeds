@@ -11,6 +11,7 @@ Usage (works from any working directory; all paths are relative to this script):
   python3 publish.py channel remove --slug deals --yes        # unregister + delete its stored items
   python3 publish.py add --channel reading --title "..." --file post.md [--date ISO] [--link URL] [--no-deploy]
   python3 publish.py deploy | build | resplit [--no-deploy]
+  python3 publish.py sync-live   # merge live channel XML into local items*.json (CI / stale checkout)
   python3 publish.py progress [--date YYYY-MM-DD] [--channel slug]  # D1 done/skip/todo (default: yesterday KST)
 
 Outputs (under public/<secret>/):
@@ -2191,6 +2192,109 @@ def smoke_secret_apis(name, sec):
         sys.exit("ERROR: deploy smoke done failed: %s\nURL: %s" % (e, done_url))
 
 
+def _http_get(url, timeout=60):
+    req = urllib.request.Request(url, headers={"User-Agent": "hyunho-feeds-sync-live"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def _parse_rss_items(xml_text):
+    """Parse published channel XML into stored item dicts (best-effort)."""
+    from email.utils import parsedate_to_datetime
+    items = []
+    for m in re.finditer(r"<item>(.*?)</item>", xml_text, re.S):
+        block = m.group(1)
+
+        def cdata(tag):
+            mm = re.search(rf"<{tag}[^>]*><!\[CDATA\[(.*?)\]\]></{tag}>", block, re.S)
+            if mm:
+                return mm.group(1)
+            mm = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", block, re.S)
+            return html.unescape(mm.group(1).strip()) if mm else ""
+
+        gm = re.search(r"<guid[^>]*>(.*?)</guid>", block, re.S)
+        pm = re.search(r"<pubDate>(.*?)</pubDate>", block, re.S)
+        if not gm or not pm:
+            continue
+        guid = gm.group(1).strip()
+        try:
+            dt = parsedate_to_datetime(pm.group(1).strip())
+        except Exception:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=KST)
+        pub_iso = dt.astimezone(KST).isoformat()
+        title = cdata("title")
+        enc = re.search(r"<content:encoded><!\[CDATA\[(.*?)\]\]></content:encoded>", block, re.S)
+        desc = re.search(r"<description><!\[CDATA\[(.*?)\]\]></description>", block, re.S)
+        html_body = desc.group(1) if desc else ""
+        html_body = re.sub(r'<p><a href="grokbot://[^"]+">.*?</a></p>\s*$', "", html_body)
+        md = enc.group(1) if enc else ""
+        if md:
+            try:
+                html_body = body_html(md)
+            except Exception:
+                pass
+        item = {"id": guid, "title": title, "pubDate": pub_iso, "html": html_body}
+        if md:
+            item["md"] = md
+        lm = re.search(r"<link>(.*?)</link>", block, re.S)
+        if lm:
+            link = html.unescape(lm.group(1).strip())
+            if link:
+                item["link"] = link
+        items.append(item)
+    return items
+
+
+def sync_items_from_live():
+    """Pull channel XML from the live Pages site into local items*.json.
+
+    CI/agent checkouts often lag behind bot posts. Merging live XML before
+    build/deploy keeps the routine-count guard green and avoids wiping today.
+    Existing local md/link fields win when XML omits them.
+    """
+    sec = secret()
+    name = project()
+    base = "https://%s.pages.dev/%s" % (name, sec)
+    data = load_channels()
+    slugs = ["valley"] + [s for s in data.get("channels", {}) if s != "valley"]
+    if not os.path.isdir(CHAN_ITEMS_DIR):
+        os.makedirs(CHAN_ITEMS_DIR, exist_ok=True)
+    for slug in slugs:
+        url = "%s/%s.xml" % (base, slug)
+        try:
+            xml = _http_get(url).decode("utf-8")
+        except Exception as e:
+            print("sync-live SKIP %s: %s" % (slug, e))
+            continue
+        new = _parse_rss_items(xml)
+        path = ITEMS if slug == "valley" else chan_items_path(slug)
+        old = load_json(path, [])
+        by_id = {it.get("id"): it for it in old if it.get("id")}
+        merged = []
+        for it in new:
+            prev = by_id.get(it["id"])
+            if prev:
+                if not it.get("md") and prev.get("md"):
+                    it["md"] = prev["md"]
+                if prev.get("link") and not it.get("link"):
+                    it["link"] = prev["link"]
+                # Keep richer stored fields bots may have set (today_routine lives in md).
+                for k in ("channels", "agent", "channel"):
+                    if prev.get(k) and not it.get(k):
+                        it[k] = prev[k]
+            merged.append(it)
+        new_ids = {it["id"] for it in merged}
+        for it in old:
+            if it.get("id") and it["id"] not in new_ids:
+                merged.append(it)
+        merged = by_date(merged)[:MAX_ITEMS]
+        save_json(path, merged)
+        print("sync-live %s: xml=%d saved=%d md=%d" % (
+            slug, len(new), len(merged), sum(1 for x in merged if x.get("md"))))
+
+
 def deploy(sec):
     sync_secret_functions()
     cal_fn = os.path.join(BASE, "functions", sec, "api", "today-cal.js")
@@ -2768,6 +2872,7 @@ def main():
     rv.add_argument("--file", required=True)
     sub.add_parser("deploy")
     sub.add_parser("build")
+    sub.add_parser("sync-live", help="merge live Pages channel XML into local items*.json")
     p_prog = sub.add_parser("progress", help="print D1 done/skip/todo JSON for a date (learning bots)")
     p_prog.add_argument("--date", default=None, help="YYYY-MM-DD (default: yesterday KST)")
     p_prog.add_argument("--channel", default=None, help="optional channel slug filter")
@@ -2801,6 +2906,9 @@ def main():
     elif args.cmd == "build":
         with publish_lock():
             build(); print("TODAY URL (after deploy):", today_url())
+    elif args.cmd == "sync-live":
+        with publish_lock():
+            sync_items_from_live()
     elif args.cmd == "progress":
         cmd_progress(args)
     else:

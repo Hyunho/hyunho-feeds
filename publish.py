@@ -2181,6 +2181,35 @@ def assert_routine_count_not_shrinking(routines, name, sec):
     print("Routine-count guard OK: live=%d build=%d" % (live_n, new_n))
 
 
+# Calendar titles that must stay in the today page FIXED_ROUTINES table.
+# An older checkout (before these were added) can still pass the secret-path and
+# routine-count guards, then wipe "고정 세부 루틴" cards on production.
+REQUIRED_FIXED_ROUTINE_TITLES = ("아침 루틴", "일과 시작", "Valley AI 확인")
+
+
+def assert_fixed_routines_in_today(today_html_path):
+    """Refuse deploys whose today page is missing the hardcoded fixed checklists."""
+    if os.environ.get("FORCE_SKIP_FIXED_ROUTINES", "").strip() in ("1", "true", "yes"):
+        print("FORCE_SKIP_FIXED_ROUTINES set — allowing today without FIXED_ROUTINES")
+        return
+    if not os.path.isfile(today_html_path):
+        sys.exit("ERROR: missing %s — run build before deploy" % today_html_path)
+    html = open(today_html_path, encoding="utf-8").read()
+    if "var FIXED_ROUTINES=" not in html:
+        sys.exit(
+            "ERROR: built today page has no FIXED_ROUTINES (stale publish.py / old checkout?). "
+            "Deploying this would hide 아침 루틴 · 일과 시작 · Valley AI 확인 fixed checklists. "
+            "Update to main (or set FORCE_SKIP_FIXED_ROUTINES=1 only when intentional)."
+        )
+    missing = [t for t in REQUIRED_FIXED_ROUTINE_TITLES if ("title:'%s'" % t) not in html]
+    if missing:
+        sys.exit(
+            "ERROR: FIXED_ROUTINES missing title(s) %s — refusing deploy that would drop "
+            "고정 세부 루틴 cards." % (", ".join(missing),)
+        )
+    print("Fixed-routines guard OK: %s" % ", ".join(REQUIRED_FIXED_ROUTINE_TITLES))
+
+
 def smoke_secret_apis(name, sec):
     """Hit today-cal + done after deploy; both must work or completion toggles fail in the app."""
     ua = {"User-Agent": "hyunho-feeds-deploy-smoke"}
@@ -2332,6 +2361,7 @@ def deploy(sec):
     assert_secret_path_stable(sec, env, name)
     # today.html is already built into PUBLIC; recount from the generated page.
     today_html = os.path.join(PUBLIC, sec, "today.html")
+    assert_fixed_routines_in_today(today_html)
     built = []
     if os.path.isfile(today_html):
         m = re.search(

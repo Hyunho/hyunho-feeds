@@ -80,6 +80,29 @@ https://hyunho-feeds.pages.dev/<secret>/sns        # SNS 타임라인
 - 출처 삭제(저장된 글도 삭제): `python3 $PUB channel remove --slug deals --yes` — 다른 봇의 출처는 건드리지 마세요.
 - 데이터: `channels.json`(출처 등록), `items/<slug>.json`(봇 글), `items.json`(Valley AI: 브리핑+공부). 오늘 페이지는 이 데이터로 매번 새로 생성됩니다.
 
+## 5b. GitHub Actions 배포 (`main` push)
+
+PR을 머지해도 **Actions 시크릿이 없으면** 배포되지 않습니다. 워크플로 파일은 `.github/workflows/deploy.yml` 입니다.
+
+`main`에 push되면(머지 포함) 또는 Actions에서 **Run workflow** 하면:
+
+1. `python3 publish.py sync-live` — 라이브 Pages의 채널 XML을 로컬 `items*.json`에 합칩니다(봇이 올린 글을 git보다 우선 보존).
+2. `python3 publish.py deploy` — Cloudflare Pages에 올립니다.
+
+### 한 번만: 저장소 Secrets 등록
+
+GitHub → **Settings → Secrets and variables → Actions**에 다음을 넣으세요.
+
+| Name | 값 |
+|------|-----|
+| `CLOUDFLARE_API_TOKEN` | 공유 박스와 같은 Pages 배포 토큰 |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id (`account_id.txt`) |
+| `FEEDS_SECRET` | 비공개 경로 32자 hex (`secret.txt`, git에 커밋 금지) |
+
+선택: Variables에 `FEEDS_PROJECT`=`hyunho-feeds` (기본값이 같으면 생략 가능).
+
+시크릿을 넣기 전에는 workflow가 실패합니다. 박스에서 봇이 `publish.py deploy`를 돌리는 기존 경로는 그대로입니다.
+
 ## 6. 할 일 Inbox (AI가 넣고, 앱이 가져간 뒤 비우기)
 
 AI/봇이 할 일을 넣으면, 사용자의 iPhone 앱이 가져가서 저장한 뒤 **가져간 id만** 지웁니다.

@@ -1,0 +1,69 @@
+# Deploy today-routine to Cloudflare Pages when main changes.
+# Does NOT run on PR merge alone until the merge commit lands on main.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN   Pages deploy token
+#   CLOUDFLARE_ACCOUNT_ID  Cloudflare account id
+#   FEEDS_SECRET           32-char hex private path (same as secret.txt on the live box)
+#
+# Optional variables:
+#   FEEDS_PROJECT          Pages project name (default: hyunho-feeds)
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install wrangler
+        run: npm ci || npm install
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Write private path + project files
+        env:
+          FEEDS_SECRET: ${{ secrets.FEEDS_SECRET }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FEEDS_PROJECT: ${{ vars.FEEDS_PROJECT }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$FEEDS_SECRET" =~ ^[0-9a-f]{32}$ ]]; then
+            echo "FEEDS_SECRET must be a 32-char lowercase hex path" >&2
+            exit 1
+          fi
+          printf '%s\n' "$FEEDS_SECRET" > secret.txt
+          printf '%s\n' "$CLOUDFLARE_ACCOUNT_ID" > account_id.txt
+          printf '%s\n' "${FEEDS_PROJECT:-hyunho-feeds}" > project.txt
+          chmod 600 secret.txt account_id.txt
+
+      - name: Sync live items then deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          set -euo pipefail
+          # Pull bot posts already on Pages so a stale git checkout cannot shrink today.
+          python3 publish.py sync-live
+          python3 publish.py deploy

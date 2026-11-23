@@ -1,0 +1,17 @@
+# Standalone Worker (NOT part of Pages). Survives stale valley-feed box Pages deploys.
+name = "hyunho-feeds-heal-fixed"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+account_id = "ac9234e431df71dc5bf03b706799d193"
+# Cron-only Worker: no public URL required (avoids workers.dev subdomain signup).
+workers_dev = false
+
+# Secrets (wrangler secret put): FEEDS_SECRET, CLOUDFLARE_API_TOKEN
+# Optional var: PAGES_PROJECT (default hyunho-feeds)
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+PAGES_PROJECT = "hyunho-feeds"
+ACCOUNT_ID = "ac9234e431df71dc5bf03b706799d193"

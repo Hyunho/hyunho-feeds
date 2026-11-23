@@ -2210,6 +2210,36 @@ def assert_fixed_routines_in_today(today_html_path):
     print("Fixed-routines guard OK: %s" % ", ".join(REQUIRED_FIXED_ROUTINE_TITLES))
 
 
+def live_today_has_fixed_routines(name, sec):
+    """True when the live today page embeds FIXED_ROUTINES with 아침 루틴."""
+    url = "https://%s.pages.dev/%s/today" % (name, sec)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "hyunho-feeds-heal", "Cache-Control": "no-cache"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception as e:
+        print("WARN: could not fetch live today for heal check (%s)" % e)
+        return None
+    return ("var FIXED_ROUTINES=" in html) and ("title:'아침 루틴'" in html)
+
+
+def cmd_heal(_args=None):
+    """Redeploy only when production today is missing FIXED_ROUTINES (stale box wipe)."""
+    name = project()
+    sec = secret()
+    ok = live_today_has_fixed_routines(name, sec)
+    if ok is True:
+        print("HEAL OK: live today already has FIXED_ROUTINES — no deploy")
+        return
+    if ok is None:
+        print("HEAL: live today unreachable — attempting deploy to restore")
+    else:
+        print("HEAL: live today missing FIXED_ROUTINES — sync-live + deploy")
+    with publish_lock():
+        sync_items_from_live()
+        deploy(build())
+
+
 def smoke_secret_apis(name, sec):
     """Hit today-cal + done after deploy; both must work or completion toggles fail in the app."""
     ua = {"User-Agent": "hyunho-feeds-deploy-smoke"}
@@ -2923,6 +2953,10 @@ def main():
     sub.add_parser("deploy")
     sub.add_parser("build")
     sub.add_parser("sync-live", help="merge live Pages channel XML into local items*.json")
+    sub.add_parser(
+        "heal",
+        help="if live today lacks FIXED_ROUTINES, sync-live + deploy (for hourly Actions / box wipe recovery)",
+    )
     p_prog = sub.add_parser("progress", help="print D1 done/skip/todo JSON for a date (learning bots)")
     p_prog.add_argument("--date", default=None, help="YYYY-MM-DD (default: yesterday KST)")
     p_prog.add_argument("--channel", default=None, help="optional channel slug filter")
@@ -2959,6 +2993,8 @@ def main():
     elif args.cmd == "sync-live":
         with publish_lock():
             sync_items_from_live()
+    elif args.cmd == "heal":
+        cmd_heal(args)
     elif args.cmd == "progress":
         cmd_progress(args)
     else:

@@ -103,6 +103,14 @@ GitHub → **Settings → Secrets and variables → Actions**에 다음을 넣�
 
 시크릿을 넣기 전에는 workflow가 실패합니다. 박스에서 봇이 `publish.py deploy`를 돌리는 기존 경로는 그대로입니다.
 
+### 고정 세부 루틴이 밤마다 사라질 때
+
+공유 박스의 `/workspace/valley-feed`가 **옛 `publish.py`(FIXED_ROUTINES 없음)** 이면, 봇이 새벽에 `deploy`할 때마다 오늘 페이지의 `아침 루틴` / `일과 시작` / `Valley AI 확인` 고정 체크리스트가 지워집니다.
+
+1. 박스에서 `valley-feed`를 이 저장소 `main`과 맞추세요(`git pull` 또는 최신 `publish.py` 동기화). 옛 checkout은 `FIXED_ROUTINES` 가드가 없어 프로덕션을 덮어씁니다.
+2. 위 Actions 시크릿을 넣으면 매시 `Heal fixed routines` 워크플로가 라이브 today에 `FIXED_ROUTINES`가 없을 때만 `sync-live` + `deploy`로 복구합니다. 수동: `python3 publish.py heal`.
+3. Pages와 별도인 Worker `workers/heal-fixed-routines`(`hyunho-feeds-heal-fixed`)도 같은 검사를 하고, 필요하면 직전 정상 Pages 배포로 롤백합니다. 계정에서 Workers 메뉴를 한 번 열어 `workers.dev` 서브도메인을 만든 뒤 `cd workers/heal-fixed-routines && npx wrangler deploy` 하세요(스크립트는 이미 업로드될 수 있고, cron 연결에 서브도메인이 필요합니다).
+
 ## 6. 할 일 Inbox (AI가 넣고, 앱이 가져간 뒤 비우기)
 
 AI/봇이 할 일을 넣으면, 사용자의 iPhone 앱이 가져가서 저장한 뒤 **가져간 id만** 지웁니다.

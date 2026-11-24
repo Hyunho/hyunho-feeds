@@ -12,6 +12,7 @@ Usage (works from any working directory; all paths are relative to this script):
   python3 publish.py add --channel reading --title "..." --file post.md [--date ISO] [--link URL] [--no-deploy]
   python3 publish.py deploy | build | resplit [--no-deploy]
   python3 publish.py sync-live   # merge live channel XML into local items*.json (CI / stale checkout)
+  python3 publish.py sync-fixed-routines [--csv-file path]  # Google Sheet → fixed-routines.json
   python3 publish.py progress [--date YYYY-MM-DD] [--channel slug]  # D1 done/skip/todo (default: yesterday KST)
 
 Outputs (under public/<secret>/):
@@ -29,7 +30,7 @@ fcntl lock on .publish.lock for the whole read-modify-write + build + deploy.
 Env: CLOUDFLARE_API_TOKEN (required for deploy), CLOUDFLARE_ACCOUNT_ID (optional;
 otherwise read from account_id.txt or discovered via GET /accounts).
 """
-import argparse, contextlib, unicodedata, fcntl, html, json, os, re, shutil, subprocess, sys, tempfile, time, urllib.request, urllib.error, uuid
+import argparse, contextlib, csv, io, unicodedata, fcntl, html, json, os, re, shutil, subprocess, sys, tempfile, time, urllib.request, urllib.error, uuid
 from datetime import datetime, timezone, timedelta
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -950,42 +951,8 @@ function setTaskDone(rid,date,tid,done){var k=tk(rid,date,tid);if(done)TASKS_DON
 function userStart(rid){return '';}
 function startOf(r){return userStart(r.rid)||r.calStart||r.start||'';}
 // Fixed detailed routines for calendar cards (no feed required). Matched by Google event id, then title.
-var FIXED_ROUTINES=[
- {eventId:'k9m89q1rpa24ufjqmk19s1ga4k',title:'아침 루틴',calendar:'Routine',tasks:[
-  {id:'brush-teeth',title:'양치질',min:3},
-  {id:'drink-water',title:'물 마시기',min:1},
-  {id:'make-bed',title:'잠자리 정리',min:1},
-  {id:'toilet',title:'화장실',min:3},
-  {id:'shower',title:'샤워',min:10},
-  {id:'stretch',title:'일어나서 스트레칭',min:15,steps:[{id:'ground-lv1',title:'그라운드 소통 Lv.1'}]},
-  {id:'tidy-house',title:'간단 집정리',min:10,steps:[
-   {id:'trash-bin',title:'쓰레기통 정리'},
-   {id:'food-waste',title:'음식물 버리기'},
-   {id:'shake-carpet',title:'카펫 털기'}
-  ]},
-  {id:'get-dressed',title:'옷 갈아입기',min:5},
-  {id:'check-schedule',title:'오늘 일정 확인',min:10}
- ]},
- {eventId:'hepgfaqcark07inovjan8tq6ec',title:'일과 시작',calendar:'Routine',tasks:[
-  {id:'power-on',title:'컴퓨터 켜기',min:1},
-  {id:'start-teatree',title:'티트리 시작',min:1},
-  {id:'coffee',title:'텀블러에 커피',min:4},
-  {id:'instrumental',title:'가사 없는 음악 듣기',min:1},
-  {id:'email',title:'이메일 확인',min:10},
-  {id:'todo-list',title:'투두리스트 확인',min:10},
-  {id:'prioritize',title:'오늘 할 일 우선순위 정하기',min:5},
-  {id:'meetings',title:'회의 일정 확인',min:3}
- ]},
- {eventId:'pti42aolps46jhrkoj9vv1irck',title:'Valley AI 확인',calendar:'Routine',
-  agent:'31c9ced1-decf-43ca-aee1-a59e15c564a9',
-  extLabel:'valley.town',extStore:'https://www.valley.town/',
-  tasks:[
-  {id:'bookmark-market',title:'최신 시황 글거리 북마크',min:5},
-  {id:'bookmark-community',title:'커뮤니티 글 북마크',min:5},
-  {id:'send-to-reader',title:'북마크된 거 리더 앱으로 보내기',min:2},
-  {id:'read-bookmarks',title:'북마크 글거리 읽기',min:18}
- ]}
-];
+// Source: Google Sheet (see fixed-routines.json / FIXED_ROUTINES_SHEET_ID); injected at build time.
+var FIXED_ROUTINES=__FIXED_ROUTINES__;
 function matchFixedRoutine(r){
  if(!r)return null;
  for(var i=0;i<FIXED_ROUTINES.length;i++){
@@ -1938,8 +1905,233 @@ document.addEventListener('visibilitychange',function(){
 
 
 
+# Google Sheet source for FIXED_ROUTINES (flat rows → nested tasks/steps at build).
+# Sheet: https://docs.google.com/spreadsheets/d/11keubKVa9KHCGYJ5wCpg3dUJ749tU9L9m5qwj9fKdAE/
+DEFAULT_FIXED_ROUTINES_SHEET_ID = "11keubKVa9KHCGYJ5wCpg3dUJ749tU9L9m5qwj9fKdAE"
+DEFAULT_FIXED_ROUTINES_GID = "1946677272"
+FIXED_ROUTINES_JSON = os.path.join(BASE, "fixed-routines.json")
+
+
+def fixed_routines_csv_url():
+    """CSV export URL. Readable without Google login only when the sheet is link-shared as Viewer."""
+    override = (os.environ.get("FIXED_ROUTINES_CSV_URL") or "").strip()
+    if override:
+        return override
+    sid = (os.environ.get("FIXED_ROUTINES_SHEET_ID") or DEFAULT_FIXED_ROUTINES_SHEET_ID).strip()
+    gid = (os.environ.get("FIXED_ROUTINES_GID") or DEFAULT_FIXED_ROUTINES_GID).strip()
+    return "https://docs.google.com/spreadsheets/d/%s/export?format=csv&gid=%s" % (sid, gid)
+
+
+def _cell(row, *keys):
+    for k in keys:
+        if k in row and row[k] is not None:
+            return str(row[k]).strip()
+    return ""
+
+
+def _parse_min(raw):
+    s = (raw or "").strip()
+    if not s:
+        return None
+    try:
+        n = int(float(s))
+    except ValueError:
+        return None
+    return n if n >= 1 else None
+
+
+def parse_fixed_routines_csv(text):
+    """Parse flat sheet rows into FIXED_ROUTINES objects (eventId/title/calendar/tasks/steps)."""
+    if not text or not text.strip():
+        raise ValueError("empty CSV")
+    # Strip UTF-8 BOM from Sheets export
+    if text.startswith("\ufeff"):
+        text = text[1:]
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise ValueError("CSV has no header")
+    fields = {((f or "").strip().lower()): (f or "").strip() for f in reader.fieldnames}
+    def col(*names):
+        for n in names:
+            if n in fields:
+                return fields[n]
+        return None
+    c_event = col("event_id", "eventid")
+    c_title = col("title", "routine_title")
+    c_cal = col("calendar")
+    c_tid = col("task_id", "taskid")
+    c_ttitle = col("task_title", "tasktitle")
+    c_min = col("min", "duration_minutes", "minutes")
+    c_sid = col("step_id", "stepid")
+    c_stitle = col("step_title", "steptitle")
+    c_agent = col("agent")
+    c_ext_label = col("ext_label", "extlabel")
+    c_ext_store = col("ext_store", "extstore")
+    if not c_title or not c_tid or not c_ttitle:
+        raise ValueError("CSV missing required columns title, task_id, task_title")
+
+    order = []
+    by_key = {}
+    for row in reader:
+        title = _cell(row, c_title)
+        tid = _cell(row, c_tid)
+        ttitle = _cell(row, c_ttitle)
+        if not title or not tid or not ttitle:
+            continue
+        event_id = _cell(row, c_event) if c_event else ""
+        calendar = _cell(row, c_cal) if c_cal else ""
+        rkey = event_id or ("title:" + title)
+        if rkey not in by_key:
+            order.append(rkey)
+            by_key[rkey] = {
+                "eventId": event_id,
+                "title": title,
+                "calendar": calendar or "Routine",
+                "tasks": [],
+                "_task_index": {},
+            }
+        routine = by_key[rkey]
+        if event_id and not routine["eventId"]:
+            routine["eventId"] = event_id
+        if calendar:
+            routine["calendar"] = calendar
+        if c_agent:
+            agent = _cell(row, c_agent)
+            if agent and not routine.get("agent"):
+                routine["agent"] = agent
+        if c_ext_label:
+            lab = _cell(row, c_ext_label)
+            if lab and not routine.get("extLabel"):
+                routine["extLabel"] = lab
+        if c_ext_store:
+            store = _cell(row, c_ext_store)
+            if store and not routine.get("extStore"):
+                routine["extStore"] = store
+        if tid not in routine["_task_index"]:
+            task = {"id": tid, "title": ttitle, "min": _parse_min(_cell(row, c_min) if c_min else ""), "steps": []}
+            routine["_task_index"][tid] = task
+            routine["tasks"].append(task)
+        else:
+            task = routine["_task_index"][tid]
+            if ttitle:
+                task["title"] = ttitle
+            m = _parse_min(_cell(row, c_min) if c_min else "")
+            if m is not None and task.get("min") is None:
+                task["min"] = m
+        sid = _cell(row, c_sid) if c_sid else ""
+        stitle = _cell(row, c_stitle) if c_stitle else ""
+        if sid and stitle:
+            if not any(s.get("id") == sid for s in task["steps"]):
+                task["steps"].append({"id": sid, "title": stitle})
+
+    out = []
+    for rkey in order:
+        r = by_key[rkey]
+        r.pop("_task_index", None)
+        if not r["eventId"]:
+            r.pop("eventId", None)
+        for t in r["tasks"]:
+            if t.get("min") is None:
+                t.pop("min", None)
+            if not t.get("steps"):
+                t.pop("steps", None)
+        if not r["tasks"]:
+            continue
+        out.append(r)
+    if not out:
+        raise ValueError("CSV produced no routines")
+    return out
+
+
+def load_fixed_routines_json(path=None):
+    path = path or FIXED_ROUTINES_JSON
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list) or not data:
+        raise ValueError("%s must be a non-empty JSON array" % path)
+    return data
+
+
+def fetch_fixed_routines_csv(url=None, timeout=25):
+    url = url or fixed_routines_csv_url()
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "hyunho-feeds-fixed-routines/1",
+            "Accept": "text/csv,text/plain,*/*",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        final = resp.geturl()
+    text = raw.decode("utf-8-sig", "replace")
+    if "text/html" in ctype or "accounts.google.com" in final or text.lstrip().lower().startswith("<!doctype"):
+        raise RuntimeError(
+            "sheet CSV not publicly readable (got login/HTML). "
+            "Share the sheet as 'Anyone with the link → Viewer', or rely on fixed-routines.json."
+        )
+    return text
+
+
+def load_fixed_routines(prefer_sheet=True):
+    """Load FIXED_ROUTINES: Google Sheet CSV when reachable, else committed fixed-routines.json."""
+    errors = []
+    if prefer_sheet and os.environ.get("FIXED_ROUTINES_SKIP_SHEET", "").strip() not in ("1", "true", "yes"):
+        try:
+            routines = parse_fixed_routines_csv(fetch_fixed_routines_csv())
+            print("FIXED_ROUTINES: loaded %d routine(s) from Google Sheet" % len(routines))
+            return routines, "sheet"
+        except Exception as e:
+            errors.append("sheet: %s" % e)
+    try:
+        routines = load_fixed_routines_json()
+        print("FIXED_ROUTINES: loaded %d routine(s) from fixed-routines.json%s"
+              % (len(routines), (" (sheet unavailable: %s)" % errors[0]) if errors else ""))
+        return routines, "json"
+    except Exception as e:
+        errors.append("json: %s" % e)
+        raise RuntimeError("FIXED_ROUTINES load failed — " + "; ".join(errors))
+
+
+def save_fixed_routines_json(routines, path=None):
+    path = path or FIXED_ROUTINES_JSON
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(routines, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+
+def fixed_routines_js_literal(routines=None):
+    """JSON text safe to embed as a JS array literal (double-quoted keys/strings)."""
+    if routines is None:
+        routines, _ = load_fixed_routines()
+    return json.dumps(routines, ensure_ascii=False, separators=(",", ":"))
+
+
 def today_page(routines):
-    return TODAY_HTML.replace("__DATA__", embed_json(routines))
+    fixed_js = fixed_routines_js_literal()
+    return (
+        TODAY_HTML.replace("__DATA__", embed_json(routines)).replace("__FIXED_ROUTINES__", fixed_js)
+    )
+
+
+def cmd_sync_fixed_routines(args):
+    """Pull the Google Sheet (or a local CSV) into fixed-routines.json."""
+    if getattr(args, "csv_file", None):
+        text = open(args.csv_file, encoding="utf-8-sig").read()
+        routines = parse_fixed_routines_csv(text)
+        src = args.csv_file
+    else:
+        text = fetch_fixed_routines_csv()
+        routines = parse_fixed_routines_csv(text)
+        src = fixed_routines_csv_url()
+    save_fixed_routines_json(routines)
+    titles = [r.get("title") or "?" for r in routines]
+    print("Synced %d routine(s) from %s → fixed-routines.json" % (len(routines), src))
+    print("Titles: %s" % ", ".join(titles))
+    missing = [t for t in REQUIRED_FIXED_ROUTINE_TITLES if t not in titles]
+    if missing:
+        sys.exit("ERROR: synced sheet is missing required title(s): %s" % ", ".join(missing))
 
 
 
@@ -2187,21 +2379,34 @@ def assert_routine_count_not_shrinking(routines, name, sec):
 REQUIRED_FIXED_ROUTINE_TITLES = ("아침 루틴", "일과 시작", "Valley AI 확인")
 
 
+def _html_has_fixed_title(html_text, title):
+    """Match title from legacy unquoted JS keys or JSON-quoted keys."""
+    return (
+        ("title:'%s'" % title) in html_text
+        or ('title:"%s"' % title) in html_text
+        or ('"title":"%s"' % title) in html_text
+    )
+
+
 def assert_fixed_routines_in_today(today_html_path):
-    """Refuse deploys whose today page is missing the hardcoded fixed checklists."""
+    """Refuse deploys whose today page is missing the fixed checklists (sheet or JSON)."""
     if os.environ.get("FORCE_SKIP_FIXED_ROUTINES", "").strip() in ("1", "true", "yes"):
         print("FORCE_SKIP_FIXED_ROUTINES set — allowing today without FIXED_ROUTINES")
         return
     if not os.path.isfile(today_html_path):
         sys.exit("ERROR: missing %s — run build before deploy" % today_html_path)
-    html = open(today_html_path, encoding="utf-8").read()
-    if "var FIXED_ROUTINES=" not in html:
+    html_text = open(today_html_path, encoding="utf-8").read()
+    if "var FIXED_ROUTINES=" not in html_text:
         sys.exit(
             "ERROR: built today page has no FIXED_ROUTINES (stale publish.py / old checkout?). "
             "Deploying this would hide 아침 루틴 · 일과 시작 · Valley AI 확인 fixed checklists. "
             "Update to main (or set FORCE_SKIP_FIXED_ROUTINES=1 only when intentional)."
         )
-    missing = [t for t in REQUIRED_FIXED_ROUTINE_TITLES if ("title:'%s'" % t) not in html]
+    if "__FIXED_ROUTINES__" in html_text:
+        sys.exit(
+            "ERROR: today page still has __FIXED_ROUTINES__ placeholder — build did not inject sheet/JSON data."
+        )
+    missing = [t for t in REQUIRED_FIXED_ROUTINE_TITLES if not _html_has_fixed_title(html_text, t)]
     if missing:
         sys.exit(
             "ERROR: FIXED_ROUTINES missing title(s) %s — refusing deploy that would drop "
@@ -2216,11 +2421,11 @@ def live_today_has_fixed_routines(name, sec):
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "hyunho-feeds-heal", "Cache-Control": "no-cache"})
         with urllib.request.urlopen(req, timeout=30) as resp:
-            html = resp.read().decode("utf-8", "replace")
+            html_text = resp.read().decode("utf-8", "replace")
     except Exception as e:
         print("WARN: could not fetch live today for heal check (%s)" % e)
         return None
-    return ("var FIXED_ROUTINES=" in html) and ("title:'아침 루틴'" in html)
+    return ("var FIXED_ROUTINES=" in html_text) and _html_has_fixed_title(html_text, "아침 루틴")
 
 
 def cmd_heal(_args=None):
@@ -2953,6 +3158,14 @@ def main():
     sub.add_parser("deploy")
     sub.add_parser("build")
     sub.add_parser("sync-live", help="merge live Pages channel XML into local items*.json")
+    p_sfr = sub.add_parser(
+        "sync-fixed-routines",
+        help="pull FIXED_ROUTINES Google Sheet (or --csv-file) into fixed-routines.json",
+    )
+    p_sfr.add_argument(
+        "--csv-file",
+        help="local CSV export instead of fetching the sheet URL",
+    )
     sub.add_parser(
         "heal",
         help="if live today lacks FIXED_ROUTINES, sync-live + deploy (for hourly Actions / box wipe recovery)",
@@ -2993,6 +3206,9 @@ def main():
     elif args.cmd == "sync-live":
         with publish_lock():
             sync_items_from_live()
+    elif args.cmd == "sync-fixed-routines":
+        with publish_lock():
+            cmd_sync_fixed_routines(args)
     elif args.cmd == "heal":
         cmd_heal(args)
     elif args.cmd == "progress":

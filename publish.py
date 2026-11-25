@@ -12,7 +12,7 @@ Usage (works from any working directory; all paths are relative to this script):
   python3 publish.py add --channel reading --title "..." --file post.md [--date ISO] [--link URL] [--no-deploy]
   python3 publish.py deploy | build | resplit [--no-deploy]
   python3 publish.py sync-live   # merge live channel XML into local items*.json (CI / stale checkout)
-  python3 publish.py sync-fixed-routines [--csv-file path]  # Google Sheet → fixed-routines.json
+  python3 publish.py sync-fixed-routines [--csv-file|--csv-dir]  # Sheet → fixed-routines.json
   python3 publish.py progress [--date YYYY-MM-DD] [--channel slug]  # D1 done/skip/todo (default: yesterday KST)
 
 Outputs (under public/<secret>/):
@@ -1905,20 +1905,76 @@ document.addEventListener('visibilitychange',function(){
 
 
 
-# Google Sheet source for FIXED_ROUTINES (flat rows → nested tasks/steps at build).
+# Google Sheet source for FIXED_ROUTINES (human-editable tabs → nested tasks/steps at build).
 # Sheet: https://docs.google.com/spreadsheets/d/11keubKVa9KHCGYJ5wCpg3dUJ749tU9L9m5qwj9fKdAE/
 DEFAULT_FIXED_ROUTINES_SHEET_ID = "11keubKVa9KHCGYJ5wCpg3dUJ749tU9L9m5qwj9fKdAE"
-DEFAULT_FIXED_ROUTINES_GID = "1946677272"
 FIXED_ROUTINES_JSON = os.path.join(BASE, "fixed-routines.json")
+FIXED_ROUTINES_SHEET_CONFIG = os.path.join(BASE, "fixed-routines.sheet.json")
+
+_META_KEY_MAP = {re.sub(r"\s+", " ", k).strip().lower(): v for k, v in {
+    "루틴 제목": "title",
+    "title": "title",
+    "routine_title": "title",
+    "Google 일정 ID": "eventId",
+    "event_id": "eventId",
+    "eventId": "eventId",
+    "캘린더": "calendar",
+    "calendar": "calendar",
+    "agent": "agent",
+    "앱 라벨": "extLabel",
+    "ext_label": "extLabel",
+    "앱 URL": "extStore",
+    "ext_store": "extStore",
+}.items()}
+
+_TASK_HEADER_ALIASES = {
+    "task_title": "task_title",
+    "작업명": "task_title",
+    "min": "min",
+    "소요(분)": "min",
+    "소요": "min",
+    "duration_minutes": "min",
+    "step_title": "step_title",
+    "세부 작업": "step_title",
+    "세부작업": "step_title",
+    "task_id": "task_id",
+    "작업id": "task_id",
+    "작업ID": "task_id",
+    "step_id": "step_id",
+    "세부id": "step_id",
+    "세부ID": "step_id",
+}
 
 
-def fixed_routines_csv_url():
-    """CSV export URL. Readable without Google login only when the sheet is link-shared as Viewer."""
+def load_fixed_routines_sheet_config():
+    """Tab layout for the human-editable FIXED_ROUTINES spreadsheet."""
+    if os.path.isfile(FIXED_ROUTINES_SHEET_CONFIG):
+        with open(FIXED_ROUTINES_SHEET_CONFIG, encoding="utf-8") as f:
+            cfg = json.load(f)
+    else:
+        cfg = {
+            "spreadsheetId": DEFAULT_FIXED_ROUTINES_SHEET_ID,
+            "indexTab": {"title": "루틴 목록", "gid": "52662635"},
+            "routineTabs": [
+                {"title": "아침 루틴", "gid": "1476331594"},
+                {"title": "일과 시작", "gid": "2066247500"},
+                {"title": "Valley AI 확인", "gid": "1501834876"},
+            ],
+        }
+    sid = (os.environ.get("FIXED_ROUTINES_SHEET_ID") or cfg.get("spreadsheetId") or DEFAULT_FIXED_ROUTINES_SHEET_ID).strip()
+    cfg["spreadsheetId"] = sid
+    return cfg
+
+
+def fixed_routines_csv_url(gid=None):
+    """CSV export URL for one tab. Needs link-sharing as Viewer (no Google login)."""
     override = (os.environ.get("FIXED_ROUTINES_CSV_URL") or "").strip()
-    if override:
+    if override and gid is None:
         return override
-    sid = (os.environ.get("FIXED_ROUTINES_SHEET_ID") or DEFAULT_FIXED_ROUTINES_SHEET_ID).strip()
-    gid = (os.environ.get("FIXED_ROUTINES_GID") or DEFAULT_FIXED_ROUTINES_GID).strip()
+    cfg = load_fixed_routines_sheet_config()
+    sid = cfg["spreadsheetId"]
+    if gid is None:
+        gid = (os.environ.get("FIXED_ROUTINES_GID") or (cfg.get("indexTab") or {}).get("gid") or "").strip()
     return "https://docs.google.com/spreadsheets/d/%s/export?format=csv&gid=%s" % (sid, gid)
 
 
@@ -1940,22 +1996,195 @@ def _parse_min(raw):
     return n if n >= 1 else None
 
 
+def _csv_rows(text):
+    if text.startswith("\ufeff"):
+        text = text[1:]
+    return [[(c or "").strip() for c in row] for row in csv.reader(io.StringIO(text))]
+
+
+def _finalize_routine(routine):
+    if not routine.get("eventId"):
+        routine.pop("eventId", None)
+    for t in routine.get("tasks") or []:
+        if t.get("min") is None:
+            t.pop("min", None)
+        if not t.get("steps"):
+            t.pop("steps", None)
+    if not routine.get("tasks"):
+        raise ValueError("routine %r has no tasks" % (routine.get("title"),))
+    return routine
+
+
+def parse_routine_tab_csv(text, fallback_title=None, index_meta=None):
+    """Parse one human-editable routine tab: key/value meta block + task table.
+
+    Task rows: 작업명 / 소요(분) / 세부 작업 / 작업ID / 세부ID
+    Continuation rows leave 작업명 blank and only fill 세부 작업 (+ 세부ID).
+    """
+    if not text or not text.strip():
+        raise ValueError("empty routine tab CSV")
+    rows = _csv_rows(text)
+    meta = {}
+    header_i = None
+    for i, row in enumerate(rows):
+        if not row or not any(row):
+            continue
+        head = row[0]
+        if head in ("작업명", "task_title", "task") or (
+            len(row) >= 2 and head in ("작업명", "task_title") 
+        ):
+            # Task table header (Korean or English)
+            norm = [re.sub(r"\s+", "", (c or "")).lower() for c in row]
+            if "작업명" in row or "task_title" in norm or "tasktitle" in norm:
+                header_i = i
+                break
+        if head in ("항목", "field", "key"):
+            continue
+        if len(row) >= 2 and head:
+            key = re.sub(r"\s+", " ", head).strip().lower()
+            mapped = _META_KEY_MAP.get(key)
+            if mapped and row[1]:
+                meta[mapped] = row[1]
+    if header_i is None:
+        raise ValueError("routine tab missing task header row (작업명 …)")
+
+    header = rows[header_i]
+    col = {}
+    for idx, name in enumerate(header):
+        n = re.sub(r"\s+", "", (name or ""))
+        # casefold for ascii aliases; keep Korean as-is match via alias table keys
+        alias = _TASK_HEADER_ALIASES.get(name) or _TASK_HEADER_ALIASES.get(n) or _TASK_HEADER_ALIASES.get(n.lower())
+        if alias:
+            col[alias] = idx
+
+    def get(row, key):
+        i = col.get(key)
+        if i is None or i >= len(row):
+            return ""
+        return (row[i] or "").strip()
+
+    if "task_title" not in col and "task_id" not in col:
+        raise ValueError("task table needs 작업명 or 작업ID columns")
+
+    tasks = []
+    task_index = {}
+    current = None
+    for row in rows[header_i + 1:]:
+        if not row or not any(row):
+            continue
+        ttitle = get(row, "task_title")
+        tid = get(row, "task_id")
+        stitle = get(row, "step_title")
+        sid = get(row, "step_id")
+        mins = _parse_min(get(row, "min"))
+        if ttitle or tid:
+            if not tid:
+                raise ValueError("task %r needs 작업ID" % (ttitle or "?",))
+            if not ttitle:
+                raise ValueError("task id %r needs 작업명" % tid)
+            if tid not in task_index:
+                current = {"id": tid, "title": ttitle, "min": mins, "steps": []}
+                task_index[tid] = current
+                tasks.append(current)
+            else:
+                current = task_index[tid]
+                if ttitle:
+                    current["title"] = ttitle
+                if mins is not None and current.get("min") is None:
+                    current["min"] = mins
+        if not current:
+            continue
+        if stitle:
+            if not sid:
+                # allow step without id only if we can skip — require id for stable checklists
+                raise ValueError("step %r under %r needs 세부ID" % (stitle, current["id"]))
+            if not any(s.get("id") == sid for s in current["steps"]):
+                current["steps"].append({"id": sid, "title": stitle})
+
+    index_meta = index_meta or {}
+    title = meta.get("title") or index_meta.get("title") or fallback_title
+    if not title:
+        raise ValueError("routine tab missing 루틴 제목")
+    routine = {
+        "eventId": meta.get("eventId") or index_meta.get("eventId") or "",
+        "title": title,
+        "calendar": meta.get("calendar") or index_meta.get("calendar") or "Routine",
+        "tasks": tasks,
+    }
+    for k in ("agent", "extLabel", "extStore"):
+        val = meta.get(k) or index_meta.get(k)
+        if val:
+            routine[k] = val
+    return _finalize_routine(routine)
+
+
+def parse_routines_index_csv(text):
+    """Parse 루틴 목록 tab → [{title, tab, eventId, calendar, agent, extLabel, extStore}, …]."""
+    if not text or not text.strip():
+        raise ValueError("empty index CSV")
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
+    if not reader.fieldnames:
+        raise ValueError("index CSV has no header")
+    fields = {re.sub(r"\s+", "", (f or "")).lower(): (f or "").strip() for f in reader.fieldnames}
+
+    def col(*names):
+        for n in names:
+            key = re.sub(r"\s+", "", n).lower()
+            if key in fields:
+                return fields[key]
+            if n in reader.fieldnames:
+                return n
+        return None
+
+    c_title = col("루틴 제목", "title", "routine_title")
+    c_tab = col("탭 이름", "탭이름", "tab", "tab_name")
+    c_event = col("Google 일정 ID", "event_id", "eventId")
+    c_cal = col("캘린더", "calendar")
+    c_agent = col("agent")
+    c_label = col("앱 라벨", "ext_label")
+    c_store = col("앱 URL", "ext_store")
+    if not c_title:
+        raise ValueError("루틴 목록 needs 루틴 제목 column")
+    out = []
+    for row in reader:
+        title = _cell(row, c_title)
+        if not title:
+            continue
+        item = {
+            "title": title,
+            "tab": _cell(row, c_tab) if c_tab else title,
+            "eventId": _cell(row, c_event) if c_event else "",
+            "calendar": _cell(row, c_cal) if c_cal else "Routine",
+        }
+        if c_agent and _cell(row, c_agent):
+            item["agent"] = _cell(row, c_agent)
+        if c_label and _cell(row, c_label):
+            item["extLabel"] = _cell(row, c_label)
+        if c_store and _cell(row, c_store):
+            item["extStore"] = _cell(row, c_store)
+        out.append(item)
+    if not out:
+        raise ValueError("루틴 목록 has no routines")
+    return out
+
+
 def parse_fixed_routines_csv(text):
-    """Parse flat sheet rows into FIXED_ROUTINES objects (eventId/title/calendar/tasks/steps)."""
+    """Parse legacy flat CSV (one row per task/step) used before the multi-tab layout."""
     if not text or not text.strip():
         raise ValueError("empty CSV")
-    # Strip UTF-8 BOM from Sheets export
     if text.startswith("\ufeff"):
         text = text[1:]
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
         raise ValueError("CSV has no header")
     fields = {((f or "").strip().lower()): (f or "").strip() for f in reader.fieldnames}
+
     def col(*names):
         for n in names:
             if n in fields:
                 return fields[n]
         return None
+
     c_event = col("event_id", "eventid")
     c_title = col("title", "routine_title")
     c_cal = col("calendar")
@@ -2028,16 +2257,7 @@ def parse_fixed_routines_csv(text):
     for rkey in order:
         r = by_key[rkey]
         r.pop("_task_index", None)
-        if not r["eventId"]:
-            r.pop("eventId", None)
-        for t in r["tasks"]:
-            if t.get("min") is None:
-                t.pop("min", None)
-            if not t.get("steps"):
-                t.pop("steps", None)
-        if not r["tasks"]:
-            continue
-        out.append(r)
+        out.append(_finalize_routine(r))
     if not out:
         raise ValueError("CSV produced no routines")
     return out
@@ -2074,12 +2294,50 @@ def fetch_fixed_routines_csv(url=None, timeout=25):
     return text
 
 
+def load_fixed_routines_from_sheet():
+    """Fetch 루틴 목록 + each routine tab and assemble FIXED_ROUTINES."""
+    cfg = load_fixed_routines_sheet_config()
+    index_gid = (cfg.get("indexTab") or {}).get("gid")
+    if not index_gid:
+        raise ValueError("fixed-routines.sheet.json missing indexTab.gid")
+    index_rows = parse_routines_index_csv(fetch_fixed_routines_csv(fixed_routines_csv_url(index_gid)))
+    tabs = {t["title"]: t for t in (cfg.get("routineTabs") or [])}
+    routines = []
+    for item in index_rows:
+        tab_name = item.get("tab") or item["title"]
+        tab = tabs.get(tab_name)
+        if not tab or not tab.get("gid"):
+            raise ValueError("no gid in fixed-routines.sheet.json for tab %r" % tab_name)
+        text = fetch_fixed_routines_csv(fixed_routines_csv_url(tab["gid"]))
+        routines.append(parse_routine_tab_csv(text, fallback_title=item["title"], index_meta=item))
+    return routines
+
+
+def load_fixed_routines_from_csv_dir(dir_path):
+    """Load from a folder: `루틴 목록.csv` + `<탭 이름>.csv` (for offline sync tests)."""
+    index_path = os.path.join(dir_path, "루틴 목록.csv")
+    if not os.path.isfile(index_path):
+        # also accept index.csv
+        index_path = os.path.join(dir_path, "index.csv")
+    index_rows = parse_routines_index_csv(open(index_path, encoding="utf-8-sig").read())
+    routines = []
+    for item in index_rows:
+        tab_name = item.get("tab") or item["title"]
+        path = os.path.join(dir_path, tab_name + ".csv")
+        if not os.path.isfile(path):
+            raise FileNotFoundError("missing routine CSV: %s" % path)
+        routines.append(
+            parse_routine_tab_csv(open(path, encoding="utf-8-sig").read(), fallback_title=item["title"], index_meta=item)
+        )
+    return routines
+
+
 def load_fixed_routines(prefer_sheet=True):
-    """Load FIXED_ROUTINES: Google Sheet CSV when reachable, else committed fixed-routines.json."""
+    """Load FIXED_ROUTINES: Google Sheet tabs when reachable, else committed fixed-routines.json."""
     errors = []
     if prefer_sheet and os.environ.get("FIXED_ROUTINES_SKIP_SHEET", "").strip() not in ("1", "true", "yes"):
         try:
-            routines = parse_fixed_routines_csv(fetch_fixed_routines_csv())
+            routines = load_fixed_routines_from_sheet()
             print("FIXED_ROUTINES: loaded %d routine(s) from Google Sheet" % len(routines))
             return routines, "sheet"
         except Exception as e:
@@ -2116,15 +2374,17 @@ def today_page(routines):
 
 
 def cmd_sync_fixed_routines(args):
-    """Pull the Google Sheet (or a local CSV) into fixed-routines.json."""
-    if getattr(args, "csv_file", None):
+    """Pull the Google Sheet (or local CSV / csv-dir) into fixed-routines.json."""
+    if getattr(args, "csv_dir", None):
+        routines = load_fixed_routines_from_csv_dir(args.csv_dir)
+        src = args.csv_dir
+    elif getattr(args, "csv_file", None):
         text = open(args.csv_file, encoding="utf-8-sig").read()
         routines = parse_fixed_routines_csv(text)
         src = args.csv_file
     else:
-        text = fetch_fixed_routines_csv()
-        routines = parse_fixed_routines_csv(text)
-        src = fixed_routines_csv_url()
+        routines = load_fixed_routines_from_sheet()
+        src = load_fixed_routines_sheet_config().get("spreadsheetUrl") or "Google Sheet"
     save_fixed_routines_json(routines)
     titles = [r.get("title") or "?" for r in routines]
     print("Synced %d routine(s) from %s → fixed-routines.json" % (len(routines), src))
@@ -3160,11 +3420,15 @@ def main():
     sub.add_parser("sync-live", help="merge live Pages channel XML into local items*.json")
     p_sfr = sub.add_parser(
         "sync-fixed-routines",
-        help="pull FIXED_ROUTINES Google Sheet (or --csv-file) into fixed-routines.json",
+        help="pull FIXED_ROUTINES Google Sheet (or --csv-file / --csv-dir) into fixed-routines.json",
     )
     p_sfr.add_argument(
         "--csv-file",
-        help="local CSV export instead of fetching the sheet URL",
+        help="legacy flat CSV (one row per task/step) instead of fetching the sheet",
+    )
+    p_sfr.add_argument(
+        "--csv-dir",
+        help="folder with 루틴 목록.csv and <탭 이름>.csv (multi-tab offline sync)",
     )
     sub.add_parser(
         "heal",

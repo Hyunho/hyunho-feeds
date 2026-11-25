@@ -1,0 +1,10 @@
+{
+  "spreadsheetId": "11keubKVa9KHCGYJ5wCpg3dUJ749tU9L9m5qwj9fKdAE",
+  "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/11keubKVa9KHCGYJ5wCpg3dUJ749tU9L9m5qwj9fKdAE/",
+  "indexTab": { "title": "루틴 목록", "gid": "52662635" },
+  "routineTabs": [
+    { "title": "아침 루틴", "gid": "1476331594" },
+    { "title": "일과 시작", "gid": "2066247500" },
+    { "title": "Valley AI 확인", "gid": "1501834876" }
+  ]
+}

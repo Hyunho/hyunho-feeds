@@ -22,7 +22,13 @@ async function fetchTodayHtml(env, host) {
 }
 
 function hasFixed(html) {
-  return typeof html === "string" && html.includes(MARKER) && html.includes("title:'아침 루틴'");
+  if (typeof html !== "string" || !html.includes(MARKER)) return false;
+  // Legacy unquoted JS keys used title:'…'; sheet/JSON inject uses "title":"…".
+  return (
+    html.includes("title:'아침 루틴'") ||
+    html.includes('title:"아침 루틴"') ||
+    html.includes('"title":"아침 루틴"')
+  );
 }
 
 async function listDeployments(env) {
